@@ -1013,7 +1013,7 @@ function SignInModal({ onClose }: { onClose: () => void }) {
   const getLogoUrl = () => {
     if (resolvedTheme === "dark" && settings.darkLogoUrl) return getImageUrl(settings.darkLogoUrl);
     if (resolvedTheme === "light" && settings.lightLogoUrl) return getImageUrl(settings.lightLogoUrl);
-    return settings.logoUrl ? getImageUrl(settings.logoUrl) : "";
+    return settings.logoUrl ? getImageUrl(settings.logoUrl) : "/logo.png";
   };
   const logoUrl = getLogoUrl();
 
@@ -1247,7 +1247,7 @@ export function PublicHeader({ activeTab, setActiveTab, onSignIn, onSignOut, use
   const getLogoUrl = () => {
     if (resolvedTheme === "dark" && settings.darkLogoUrl) return getImageUrl(settings.darkLogoUrl);
     if (resolvedTheme === "light" && settings.lightLogoUrl) return getImageUrl(settings.lightLogoUrl);
-    return settings.logoUrl ? getImageUrl(settings.logoUrl) : "";
+    return settings.logoUrl ? getImageUrl(settings.logoUrl) : "/logo.png";
   };
   const logoUrl = getLogoUrl();
 
@@ -1513,7 +1513,7 @@ export function PublicFooter() {
   const getLogoUrl = () => {
     if (resolvedTheme === "dark" && settings.darkLogoUrl) return getImageUrl(settings.darkLogoUrl);
     if (resolvedTheme === "light" && settings.lightLogoUrl) return getImageUrl(settings.lightLogoUrl);
-    return settings.logoUrl ? getImageUrl(settings.logoUrl) : "";
+    return settings.logoUrl ? getImageUrl(settings.logoUrl) : "/logo.png";
   };
   const logoUrl = getLogoUrl();
 

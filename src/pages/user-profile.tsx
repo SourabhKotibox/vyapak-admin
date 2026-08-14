@@ -313,7 +313,7 @@ export default function UserProfilePage() {
   const getLogoUrl = () => {
     if (resolvedTheme === "dark" && settings.darkLogoUrl) return getImageUrl(settings.darkLogoUrl);
     if (resolvedTheme === "light" && settings.lightLogoUrl) return getImageUrl(settings.lightLogoUrl);
-    return settings.logoUrl ? getImageUrl(settings.logoUrl) : "";
+    return settings.logoUrl ? getImageUrl(settings.logoUrl) : "/logo.png";
   };
 
   useEffect(() => {

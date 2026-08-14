@@ -26,7 +26,7 @@ export default function Login() {
   const getLogoUrl = () => {
     if (resolvedTheme === "dark" && settings.darkLogoUrl) return settings.darkLogoUrl;
     if (resolvedTheme === "light" && settings.lightLogoUrl) return settings.lightLogoUrl;
-    return settings.logoUrl;
+    return settings.logoUrl || "/logo.png";
   };
 
   const hasAppName = !!settings.platformName;

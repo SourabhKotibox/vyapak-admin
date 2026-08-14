@@ -381,11 +381,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
   );
 
   const LogoComponent = ({ collapsed = false }: { collapsed?: boolean }) => {
+    const logoSrc = getLogoUrl() || "/logo.png";
     return (
       <div className="flex items-center justify-center gap-3">
-        {getLogoUrl() ? (
+        {logoSrc ? (
           <img
-            src={getLogoUrl()}
+            src={logoSrc}
             alt="Logo"
             className="h-9 w-auto object-contain"
           />

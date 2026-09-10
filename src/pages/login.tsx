@@ -88,7 +88,8 @@ export default function Login() {
               <img
                 src={getLogoUrl()}
                 alt="Logo"
-                className="max-h-32 max-w-xs w-auto h-auto object-contain"
+                style={{ width: resolvedTheme === "dark" ? settings.darkLogoWidth : settings.lightLogoWidth, maxWidth: "100%" }}
+                className="max-h-32 h-auto object-contain"
               />
             ) : (
               <Film className="h-12 w-12 text-primary" />

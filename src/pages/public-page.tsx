@@ -3,10 +3,13 @@ import { useParams, useLocation } from "wouter";
 import { Loader2, AlertCircle, ChevronLeft, Clock } from "lucide-react";
 import { useGetPageBySlug } from "@/lib/api-client";
 import { PublicHeader, PublicFooter } from "@/pages/streaming-home";
+import { formatPlanName, clearAppAuthSession } from "@/lib/utils";
+import { useQueryClient } from "@tanstack/react-query";
 
 export default function PublicPagePage() {
   const { slug } = useParams<{ slug: string }>();
   const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
   const [user, setUser] = useState<any>(null);
   const [plansModalOpen, setPlansModalOpen] = useState(false);
 
@@ -21,10 +24,18 @@ export default function PublicPagePage() {
   const page = data?.page || data?.data || (data && !data.data && !data.page ? data : null);
 
   useEffect(() => {
-    try {
-      const storedUser = localStorage.getItem("appUser");
-      if (storedUser) setUser(JSON.parse(storedUser));
-    } catch {}
+    const loadUser = () => {
+      try {
+        const storedUser = localStorage.getItem("appUser") || localStorage.getItem("user");
+        if (storedUser) setUser(JSON.parse(storedUser));
+        else setUser(null);
+      } catch (e) {
+        setUser(null);
+      }
+    };
+    loadUser();
+    window.addEventListener("user-updated", loadUser);
+    return () => window.removeEventListener("user-updated", loadUser);
   }, []);
 
   useEffect(() => {
@@ -56,8 +67,7 @@ export default function PublicPagePage() {
   }, [page]);
 
   const handleSignOut = () => {
-    localStorage.removeItem("appUser");
-    localStorage.removeItem("appAccessToken");
+    clearAppAuthSession(queryClient);
     setUser(null);
     setLocation("/");
   };

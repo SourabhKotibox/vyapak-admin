@@ -11,6 +11,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { format } from "date-fns";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useToast } from "@/hooks/use-toast";
+import { formatPlanName } from "@/lib/utils";
 
 export default function UsersList() {
   const { t } = useLanguage();
@@ -152,7 +153,7 @@ export default function UsersList() {
                           : "bg-muted text-muted-foreground/80 dark:text-foreground/70"
                       }`}
                     >
-                      {user.subscriptionPlan || "Free"}
+                      {formatPlanName(user.subscriptionPlan)}
                     </span>
                   </TableCell>
                   <TableCell className="text-muted-foreground text-sm">

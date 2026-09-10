@@ -3,18 +3,29 @@ import { useLocation } from "wouter";
 import { Loader2, ArrowLeft, HelpCircle, Mail, MessageSquare, ChevronDown, Search } from "lucide-react";
 import { useGetPublicFAQs } from "@/lib/api-client";
 import { PublicHeader, PublicFooter } from "@/pages/streaming-home";
+import { formatPlanName, clearAppAuthSession } from "@/lib/utils";
+import { useQueryClient } from "@tanstack/react-query";
 
 export default function HelpSupportPage() {
   const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
   const [user, setUser] = useState<any>(null);
   const [search, setSearch] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem("appUser");
-      if (stored) setUser(JSON.parse(stored));
-    } catch {}
+    const loadUser = () => {
+      try {
+        const stored = localStorage.getItem("appUser") || localStorage.getItem("user");
+        if (stored) setUser(JSON.parse(stored));
+        else setUser(null);
+      } catch (e) {
+        setUser(null);
+      }
+    };
+    loadUser();
+    window.addEventListener("user-updated", loadUser);
+    return () => window.removeEventListener("user-updated", loadUser);
   }, []);
 
   const { data: faqsData, isLoading } = useGetPublicFAQs();
@@ -27,12 +38,8 @@ export default function HelpSupportPage() {
   );
 
   const handleSignOut = () => {
-    localStorage.removeItem("appUser");
-    localStorage.removeItem("appAccessToken");
-    localStorage.removeItem("refreshToken");
-    localStorage.removeItem("ott_active_profile");
-    setLocation("/login");
-    window.location.reload();
+    clearAppAuthSession(queryClient);
+    setUser(null);
   };
 
   return (

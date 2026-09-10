@@ -252,7 +252,9 @@ export default function PlansPage() {
                       </p>
                     </TableCell>
                     <TableCell>
-                      <Switch checked={plan.status}
+                      <Switch 
+                        checked={plan.name.toLowerCase() === "free" ? true : plan.status}
+                        disabled={plan.name.toLowerCase() === "free"}
                         onCheckedChange={() => toggleStatus(plan.id, plan.status)}
                         className="data-[state=checked]:bg-primary" />
                     </TableCell>

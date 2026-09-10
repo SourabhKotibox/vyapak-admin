@@ -12,7 +12,8 @@ import Hls from "hls.js";
 import { useGetWebSubscriptionPlans, useCreateSubscription, useGetWebDetail, getImageUrl, useGetPublicAds, useGetAppProfile, useToggleLike, useRequestDownload, useRemoveDownload, useGetWishlist, useToggleWishlist, useSaveWatchProgress, useGetWatchProgress, getOfflineVideoUrl, useGetDownloads, cacheDownloadedVideo, removeOfflineVideo, useRecordView, useRecordShare } from "@/lib/api-client";
 import { PlayerPrerollAd } from "@/components/AdComponents";
 import { useToast } from "@/hooks/use-toast";
-import { PortraitCard } from "@/components/ContentCard";
+import { formatPlanName, clearAppAuthSession } from "@/lib/utils";
+import { useQueryClient } from "@tanstack/react-query";
 /* ─── AD OVERLAY ─── */
 function AdOverlay({ ad, onSkip }: { ad: any; onSkip: () => void }) {
   const [countdown, setCountdown] = useState(5);
@@ -852,6 +853,7 @@ function EpisodeGrid({
           // Determine download status for this episode/cell
           let isEpDownloaded = false;
           let epIdForCell = "";
+          let episodeAllowsDownload = true;
           if (downloads) {
             if (isTrailer) {
               isEpDownloaded = downloads.some((d: any) => !d.episodeId);
@@ -859,6 +861,7 @@ function EpisodeGrid({
               const cellEp = apiEpisodes.find(
                 (e: any) => e.episode === n || e.episodeNumber === n || e.number === n
               );
+              episodeAllowsDownload = cellEp?.downloadAllowed !== false;
               epIdForCell = cellEp?.id || cellEp?._id;
               if (epIdForCell) {
                 isEpDownloaded = downloads.some((d: any) => d.episodeId === epIdForCell);
@@ -886,7 +889,7 @@ function EpisodeGrid({
                 </span>
               )}
 
-              {!isLocked && onDownloadToggle && (
+              {!isLocked && onDownloadToggle && episodeAllowsDownload && (
                 <span
                   role="button"
                   tabIndex={0}
@@ -1060,6 +1063,7 @@ function LockPopup({ episodeNum, onClose, onSubscribed }: { episodeNum: number; 
 export default function EpisodeDetailPage() {
   const params = useParams<{ showTitle: string; epNum: string }>();
   const [, navigate] = useLocation();
+  const queryClient = useQueryClient();
 
   const [user, setUser] = useState<any>(null);
   const [adDismissed, setAdDismissed] = useState(false);
@@ -1081,25 +1085,29 @@ export default function EpisodeDetailPage() {
   });
 
   useEffect(() => {
-    try {
-      const appUserStr = localStorage.getItem("appUser");
-      const userStr = localStorage.getItem("user");
-      const parsedUser = appUserStr ? JSON.parse(appUserStr) : (userStr ? JSON.parse(userStr) : null);
-      if (parsedUser) setUser(parsedUser);
-      // Sync token key so API calls work for users who logged in via streaming-home
-      if (!localStorage.getItem("appAccessToken") && localStorage.getItem("accessToken")) {
-        localStorage.setItem("appAccessToken", localStorage.getItem("accessToken")!);
+    const loadUser = () => {
+      try {
+        const appUserStr = localStorage.getItem("appUser");
+        const userStr = localStorage.getItem("user");
+        const parsedUser = appUserStr ? JSON.parse(appUserStr) : (userStr ? JSON.parse(userStr) : null);
+        if (parsedUser) setUser(parsedUser);
+        else setUser(null);
+        // Sync token key so API calls work for users who logged in via streaming-home
+        if (!localStorage.getItem("appAccessToken") && localStorage.getItem("accessToken")) {
+          localStorage.setItem("appAccessToken", localStorage.getItem("accessToken")!);
+        }
+      } catch (e) {
+        setUser(null);
       }
-    } catch (e) {}
+    };
+    loadUser();
+    window.addEventListener("user-updated", loadUser);
+    return () => window.removeEventListener("user-updated", loadUser);
   }, []);
 
   const handleSignOut = () => {
-    localStorage.removeItem("appUser");
-    localStorage.removeItem("appAccessToken");
-    localStorage.removeItem("user");
-    localStorage.removeItem("accessToken");
+    clearAppAuthSession(queryClient);
     setUser(null);
-    window.location.reload();
   };
 
   const recordShareMutation = useRecordShare();
@@ -1177,6 +1185,7 @@ export default function EpisodeDetailPage() {
   const { data: savedProgress } = useGetWatchProgress(contentId || undefined, currentEpId || undefined);
 
   const { data: profileData } = useGetAppProfile();
+  const currentUser = profileData?.user || profileData?.userProfile || user;
   const { toast } = useToast();
 
   const { data: wishlistData } = useGetWishlist({ limit: 100 });
@@ -1197,8 +1206,13 @@ export default function EpisodeDetailPage() {
   const downloadItems: any[] = Array.isArray(downloadsData) ? downloadsData : [];
   const downloadRecord = currentEp === 0
     ? downloadItems.find((d: any) => d.contentId === contentId && !d.episodeId)
-    : downloadItems.find((d: any) => d.episodeId === currentEpId);
+    : currentEpisode?.downloadAllowed !== false
+      ? downloadItems.find((d: any) => d.episodeId === currentEpId)
+      : undefined;
   const isDownloaded = !!downloadRecord;
+  const currentEpisodeAllowsDownload = currentEp === 0
+    ? showData?.downloadAllowed !== false
+    : currentEpisode?.downloadAllowed !== false;
   const requestDownloadMutation = useRequestDownload();
   const removeDownloadMutation = useRemoveDownload();
   const [dlProgress, setDlProgress] = useState<number | null>(null);
@@ -1240,7 +1254,7 @@ export default function EpisodeDetailPage() {
         (e: any) => e.episode === epNum || e.episodeNumber === epNum || e.number === epNum
       );
       const epId = epRecord?.id || epRecord?._id;
-      if (!epId) return;
+      if (!epId || epRecord?.downloadAllowed === false) return;
       const record = downloadItems.find((d: any) => d.episodeId === epId);
       if (record) {
         removeDownloadMutation.mutate(
@@ -1503,30 +1517,31 @@ export default function EpisodeDetailPage() {
                   {toggleWishlistMutation.isPending ? (
                     <Loader2 className="w-5 h-5 animate-spin" />
                   ) : (
-                    <Plus className={`w-5 h-5 ${inWatchlist ? "rotate-45 text-[#E50914]" : ""}`} />
+                    inWatchlist ? <Check className="w-5 h-5 text-[#E50914]" /> : <Plus className="w-5 h-5" />
                   )}
                   <span className="text-[11px] font-semibold mt-0.5">
-                    {inWatchlist ? "Wishlisted" : "Watchlist"}
+                    {inWatchlist ? "Wishlisted" : "+ Watchlist"}
                   </span>
                 </button>
 
-                {/* Download Button */}
-                <button
-                  onClick={() => handleDownloadToggle(currentEp)}
-                  disabled={requestDownloadMutation.isPending || removeDownloadMutation.isPending}
-                  className="flex flex-col items-center gap-1 px-4 py-2 text-foreground/80 hover:text-foreground transition-all active:scale-95 disabled:opacity-70"
-                >
-                  {requestDownloadMutation.isPending || removeDownloadMutation.isPending ? (
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                  ) : isDownloaded ? (
-                    <Check className="w-5 h-5 text-emerald-400" strokeWidth={3} />
-                  ) : (
-                    <Download className="w-5 h-5" />
-                  )}
-                  <span className="text-[11px] font-semibold mt-0.5">
-                    {isDownloaded ? "Downloaded" : "Download"}
-                  </span>
-                </button>
+                {currentEpisodeAllowsDownload && (
+                  <button
+                    onClick={() => handleDownloadToggle(currentEp)}
+                    disabled={requestDownloadMutation.isPending || removeDownloadMutation.isPending}
+                    className="flex flex-col items-center gap-1 px-4 py-2 text-foreground/80 hover:text-foreground transition-all active:scale-95 disabled:opacity-70"
+                  >
+                    {requestDownloadMutation.isPending || removeDownloadMutation.isPending ? (
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : isDownloaded ? (
+                      <Check className="w-5 h-5 text-emerald-400" strokeWidth={3} />
+                    ) : (
+                      <Download className="w-5 h-5" />
+                    )}
+                    <span className="text-[11px] font-semibold mt-0.5">
+                      {isDownloaded ? "Downloaded" : "Download"}
+                    </span>
+                  </button>
+                )}
               </div>
 
               {/* Cast & Crew Section */}
@@ -1653,7 +1668,7 @@ export default function EpisodeDetailPage() {
                                 >
                                   {ep.episode || ep.episodeNumber || ep.number}. {ep.title}
                                 </h4>
-                                {!isLocked && (
+                                {Boolean(!isLocked && currentUser && currentUser.downloadAllowed && ep.downloadAllowed !== false) && (
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation();

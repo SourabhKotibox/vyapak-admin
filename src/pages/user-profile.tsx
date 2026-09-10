@@ -17,6 +17,8 @@ import {
 } from "@/lib/api-client";
 import { PublicFooter } from "@/pages/streaming-home";
 import { WebsiteReviews } from "@/components/WebsiteReviews";
+import { formatPlanName, clearAppAuthSession } from "@/lib/utils";
+import { useQueryClient } from "@tanstack/react-query";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 type ProfileTab = "overview" | "watchlist" | "downloads" | "settings" | "security" | "feedback";
@@ -238,6 +240,7 @@ function ProfileSelectScreen({ mainUserName, profileLimitCount, userId, onSelect
 // ─── Main page ─────────────────────────────────────────────────────────────────
 export default function UserProfilePage() {
   const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
   const { settings } = useSettings();
   const { resolvedTheme } = useTheme();
 
@@ -353,12 +356,10 @@ export default function UserProfilePage() {
   }, [downloadItems.length]);
 
   const handleSignOut = () => {
-    localStorage.removeItem("appUser");
-    localStorage.removeItem("appAccessToken");
-    localStorage.removeItem("refreshToken");
-    localStorage.removeItem("ott_active_profile");
+    clearAppAuthSession(queryClient);
+    setUser(null);
+    setActiveProfile(null);
     setLocation("/");
-    window.location.reload();
   };
 
   const handleSaveProfile = async () => {
@@ -415,8 +416,9 @@ export default function UserProfilePage() {
     setDeleting(true);
     try {
       await deleteAccount();
-      localStorage.removeItem("appUser");
-      localStorage.removeItem("appAccessToken");
+      clearAppAuthSession(queryClient);
+      setUser(null);
+      setActiveProfile(null);
       setLocation("/");
     } catch {
       setDeleting(false); setDeleteConfirm(false);
@@ -425,18 +427,16 @@ export default function UserProfilePage() {
 
   const handleRemoveWishlist = async (item: any) => {
     try {
-      await toggleWishlistMutation.mutateAsync({ contentId: item.id, contentType: item.type });
+      await toggleWishlistMutation.mutateAsync({ contentId: item.contentId || item.id, contentType: item.contentType || item.type });
       setToast("Removed from wishlist");
-      refetchWishlist();
     } catch { setToast("Failed to remove from wishlist"); }
   };
 
   const handleRemoveDownload = async (item: any) => {
     try {
-      await removeDownloadMutation.mutateAsync({ id: item.id, contentId: item.contentId, episodeId: item.episodeId || undefined });
+      await removeDownloadMutation.mutateAsync({ id: item.id || item._id, contentId: item.contentId, episodeId: item.episodeId || undefined });
       await removeOfflineVideo(item.contentId, item.episodeId || undefined);
       setToast("Download removed");
-      refetchDownloads();
     } catch { setToast("Failed to remove download"); }
   };
 
@@ -450,7 +450,7 @@ export default function UserProfilePage() {
     const navId = item.contentId || item.id;
     const isDrama = item.type === "drama" || item.contentType === "drama";
     const isShow = item.type === "show" || item.type === "series" || item.contentType === "series";
-    if (isDrama) setLocation(`/drama/${navId}/episode/1`);
+    if (isDrama) setLocation(`/drama/${navId}/episode/${item.episodeNumber || 1}`);
     else if (isShow) setLocation(`/show/${navId}`);
     else setLocation(`/movie/${navId}`);
   };
@@ -498,7 +498,7 @@ export default function UserProfilePage() {
             </Link>
             <div className="flex items-center gap-2">
               {getLogoUrl() ? (
-                <img src={getLogoUrl()} alt={settings.platformName} className="h-7 w-auto object-contain" />
+                <img src={getLogoUrl()} alt={settings.platformName} style={{ width: resolvedTheme === "dark" ? settings.darkLogoWidth : settings.lightLogoWidth, height: "auto" }} className="max-w-full object-contain" />
               ) : (
                 <h1 className="text-foreground font-black text-lg tracking-tight">{settings.platformName || "StreamIT"}</h1>
               )}
@@ -536,15 +536,14 @@ export default function UserProfilePage() {
                 <p className="text-muted-foreground text-sm font-medium mt-0.5">{user.email || "Member"}</p>
                 
                 <div className="flex flex-wrap items-center justify-center gap-2 mt-4">
-                  {isSubscribed ? (
-                    <span className="flex items-center gap-1.5 px-3 py-1 bg-amber-500/10 border border-amber-500/20 text-amber-500 rounded-lg text-[11px] font-black uppercase tracking-wider">
-                      <Crown className="w-3.5 h-3.5" /> {user.subscriptionPlan} VIP
-                    </span>
-                  ) : (
-                    <span className="flex items-center gap-1.5 px-3 py-1 bg-muted border border-border text-muted-foreground rounded-lg text-[11px] font-black uppercase tracking-wider">
-                      Free Member
-                    </span>
-                  )}
+                  <span className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-[11px] font-black uppercase tracking-wider ${
+                    isSubscribed
+                      ? "bg-amber-500/10 border border-amber-500/20 text-amber-500"
+                      : "bg-muted border border-border text-muted-foreground"
+                  }`}>
+                    {isSubscribed && <Crown className="w-3.5 h-3.5" />}
+                    {formatPlanName(user.subscriptionPlan)}
+                  </span>
                   <span className="flex items-center gap-1.5 px-3 py-1 bg-primary/10 border border-primary/20 text-primary rounded-lg text-[11px] font-black uppercase tracking-wider">
                     {activeProfile.name}
                   </span>
@@ -619,7 +618,7 @@ export default function UserProfilePage() {
                       { icon: <Film className="text-rose-500" />, label: "History", value: continueWatching.length },
                       { icon: <Bookmark className="text-violet-500" />, label: "Wishlist", value: wishlistItems.length },
                       { icon: <Download className="text-emerald-500" />, label: "Downloads", value: downloadItems.length },
-                      { icon: <Crown className="text-amber-500" />, label: "Plan", value: isSubscribed ? "VIP" : "Free" },
+                      { icon: <Crown className="text-amber-500" />, label: "Plan", value: formatPlanName(user.subscriptionPlan) },
                     ].map((stat, i) => (
                       <div key={i} className="bg-card/50 border border-border/40 rounded-2xl p-4 flex flex-col items-center text-center">
                         <div className="w-10 h-10 rounded-full bg-background border border-border/50 flex items-center justify-center mb-3">

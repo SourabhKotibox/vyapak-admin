@@ -134,9 +134,11 @@ export default function ShortDramaPlayer() {
   // Downloads — track actual download records to show correct Save/Saved state
   const { data: downloadsData } = useGetDownloads({ limit: 200 });
   const downloadItems: any[] = Array.isArray(downloadsData) ? downloadsData : [];
+  const currentUser = profileData?.user || profileData?.userProfile || user;
   const currentEpIdForDownload = currentEpisode?._id || currentEpisode?.id;
+  const currentEpisodeAllowsDownload = Boolean(currentUser && currentUser.downloadAllowed && currentEpisode?.downloadAllowed !== false);
   const isDownloaded = !!downloadItems.find((d: any) =>
-    d.contentId === id && d.episodeId === currentEpIdForDownload
+    currentEpisodeAllowsDownload && d.contentId === id && d.episodeId === currentEpIdForDownload
   );
 
   const isLiked = profileData?.likeRecords?.some((l: any) => l.contentId === id && (!l.episodeId || l.episodeId === currentEpisode?._id || l.episodeId === currentEpisode?.id)) || false;
@@ -263,7 +265,7 @@ export default function ShortDramaPlayer() {
 
   const handleDownloadEpisode = async () => {
     if (!user) { toast({ title: "Please sign in to download", variant: "destructive" }); return; }
-    if (!currentEpisode) return;
+    if (!currentEpisode || !currentEpisodeAllowsDownload) return;
     const epId = currentEpisode._id || currentEpisode.id;
     if (isDownloaded) {
       // Remove download
@@ -378,9 +380,9 @@ export default function ShortDramaPlayer() {
                     {
                       onSuccess: (data: any) => {
                         const added = data?.isWishlisted ?? data?.data?.isWishlisted;
-                        toast({ title: added ? "Added to watchlist" : "Removed from watchlist" });
+                        toast({ title: added ? "Added to wishlist" : "Removed from wishlist" });
                       },
-                      onError: () => toast({ title: "Failed to update watchlist", variant: "destructive" }),
+                      onError: () => toast({ title: "Failed to update wishlist", variant: "destructive" }),
                     }
                   );
                 }}
@@ -391,8 +393,8 @@ export default function ShortDramaPlayer() {
                     : "bg-zinc-900/40 border-zinc-800 text-white/75 hover:border-zinc-500 hover:text-white"
                 }`}
               >
-                <Plus className={`w-3.5 h-3.5 ${inWatchlist ? "rotate-45 text-rose-400" : ""}`} />
-                <span>{inWatchlist ? "Wishlisted" : "Watchlist"}</span>
+                {inWatchlist ? <Check className="w-3.5 h-3.5 text-rose-400" /> : <Plus className="w-3.5 h-3.5" />}
+                <span>{inWatchlist ? "Wishlisted" : "+ Wishlist"}</span>
               </button>
             </div>
 
@@ -555,9 +557,9 @@ export default function ShortDramaPlayer() {
                   {
                     onSuccess: (data: any) => {
                       const added = data?.isWishlisted ?? data?.data?.isWishlisted;
-                      toast({ title: added ? "Added to watchlist" : "Removed from watchlist" });
+                      toast({ title: added ? "Added to wishlist" : "Removed from wishlist" });
                     },
-                    onError: () => toast({ title: "Failed to update watchlist", variant: "destructive" }),
+                    onError: () => toast({ title: "Failed to update wishlist", variant: "destructive" }),
                   }
                 );
               }}
@@ -565,13 +567,12 @@ export default function ShortDramaPlayer() {
               className="flex flex-col items-center gap-1 group/float active:scale-90 transition-all text-white disabled:opacity-50"
             >
               <div className={`w-10 h-10 rounded-full flex items-center justify-center bg-black/60 border border-white/10 backdrop-blur-md transition-colors group-hover/float:bg-white/20 ${inWatchlist ? "text-[#E50914] border-[#E50914]/40" : ""}`}>
-                <Plus className={`w-4.5 h-4.5 ${inWatchlist ? "rotate-45 text-[#E50914]" : ""}`} />
+                {inWatchlist ? <Check className="w-4.5 h-4.5 text-[#E50914]" /> : <Plus className="w-4.5 h-4.5" />}
               </div>
-              <span className="text-[9px] font-bold drop-shadow-md">Watchlist</span>
+              <span className="text-[9px] font-bold drop-shadow-md">{inWatchlist ? "Wishlisted" : "+ Wishlist"}</span>
             </button>
 
-            {/* Download Action */}
-            <button
+            {currentEpisodeAllowsDownload && <button
               onClick={(e) => { e.stopPropagation(); handleDownloadEpisode(); }}
               disabled={downloading || requestDownloadMutation.isPending || removeDownloadMutation.isPending}
               className="flex flex-col items-center gap-1 group/float active:scale-90 transition-all text-white disabled:opacity-50"
@@ -586,7 +587,7 @@ export default function ShortDramaPlayer() {
                   : <Download className="w-4.5 h-4.5" />}
               </div>
               <span className="text-[9px] font-bold drop-shadow-md">{isDownloaded ? "Saved" : "Save"}</span>
-            </button>
+            </button>}
 
             {/* Episodes List Trigger */}
             <button

@@ -84,14 +84,18 @@ export default function MediaPicker({ open, onClose, onSelect, source, accept = 
 
         const uploadedFile = result?.data?.[0];
         if (uploadedFile) {
+          const persistedPath = uploadedFile.filePath || uploadedFile.url;
+          if (typeof persistedPath !== "string" || !persistedPath.trim() || persistedPath.startsWith("blob:") || persistedPath.startsWith("data:")) {
+            throw new Error("Upload completed without a persisted media path");
+          }
           // Pass the entire uploaded file
           onSelect({
             ...uploadedFile,
-            url: getImageUrl(uploadedFile.filePath || uploadedFile.url),
-            filePath: uploadedFile.filePath || uploadedFile.url,
+            url: getImageUrl(persistedPath),
+            filePath: persistedPath,
           });
         } else {
-          onSelect({ url: preview || "", filePath: "", name: selectedMedia.name });
+          throw new Error("Upload completed without a persisted media file");
         }
         handleClose();
       } catch (error: any) {

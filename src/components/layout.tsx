@@ -206,6 +206,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
     return getImageUrl(settings.logoUrl);
   };
 
+  const logoWidth = resolvedTheme === "dark" ? settings.darkLogoWidth : settings.lightLogoWidth;
+
   const isItemActive = (href: string) =>
     location === href || location.startsWith(href + "/");
 
@@ -388,7 +390,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
           <img
             src={logoSrc}
             alt="Logo"
-            className="h-9 w-auto object-contain"
+            style={{ width: logoWidth, height: "auto" }}
+            className="max-w-full object-contain"
           />
         ) : (
           <Film className={`text-primary ${collapsed ? "h-7 w-7" : "h-9 w-9"}`} />

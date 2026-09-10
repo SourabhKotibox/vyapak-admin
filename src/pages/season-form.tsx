@@ -10,8 +10,18 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { useGetContentList, useCreateEpisode } from "@/lib/api-client";
+import { getImageUrl, useGetContentList, useCreateEpisode } from "@/lib/api-client";
 import MediaPicker from "@/components/MediaPicker";
+
+type PosterState = { filePath: string; preview: string };
+
+const getPersistedMediaPath = (media: any): string => {
+  const path = media?.filePath || media?.url;
+  if (typeof path !== "string" || !path.trim() || path.startsWith("blob:") || path.startsWith("data:")) {
+    return "";
+  }
+  return path;
+};
 
 export default function SeasonForm() {
   const { toast } = useToast();
@@ -25,7 +35,7 @@ export default function SeasonForm() {
   const [showId, setShowId] = useState(queryContentId);
   const [seasonNumber, setSeasonNumber] = useState("1");
   const [description, setDescription] = useState("");
-  const [posterUrl, setPosterUrl] = useState("");
+  const [poster, setPoster] = useState<PosterState>({ filePath: "", preview: "" });
   const [posterPickerOpen, setPosterPickerOpen] = useState(false);
   const [isFree, setIsFree] = useState(false);
 
@@ -55,7 +65,7 @@ export default function SeasonForm() {
         episode: 1,
         title: `Season ${seasonNumber} - Episode 1`,
         description,
-        thumbnail: posterUrl || undefined,
+        thumbnail: poster.filePath || undefined,
         isFree,
         isLocked: !isFree,
       });
@@ -140,20 +150,28 @@ export default function SeasonForm() {
         {/* Poster image */}
         <div className="space-y-2">
           <Label className="text-foreground text-sm font-medium">Season Poster</Label>
-          {posterUrl ? (
+          {poster.preview ? (
             <div className="group relative inline-block">
-              <img src={posterUrl} alt="Poster" className="h-40 w-28 rounded-lg object-cover border border-border" />
+              <img src={poster.preview} alt="Poster" className="h-40 w-28 rounded-lg object-cover border border-border" />
             </div>
           ) : null}
           <div>
             <Button type="button" variant="outline" size="sm" onClick={() => setPosterPickerOpen(true)} className="gap-2">
-              {posterUrl ? "Change Poster" : "Pick Poster from Library"}
+              {poster.filePath ? "Change Poster" : "Pick Poster from Library"}
             </Button>
           </div>
           <MediaPicker
             open={posterPickerOpen}
             onClose={() => setPosterPickerOpen(false)}
-            onSelect={(media) => { setPosterUrl(media.filePath || media.url); setPosterPickerOpen(false); }}
+            onSelect={(media) => {
+              const filePath = getPersistedMediaPath(media);
+              if (!filePath) {
+                toast({ title: "Poster selection failed", description: "The image was not saved to storage. Please try again.", variant: "destructive" });
+                return;
+              }
+              setPoster({ filePath, preview: getImageUrl(filePath) });
+              setPosterPickerOpen(false);
+            }}
             source={isShortDrama ? "short-drama" : "tv-show"}
             accept="image/*"
           />

@@ -6,8 +6,10 @@ import {
 } from "lucide-react";
 import { PublicHeader, PublicFooter } from "./streaming-home";
 import { useGetWebBrowse, useGetGenres } from "@/lib/api-client";
-import SubscriptionPlansModal from "@/components/SubscriptionPlansModal";
+import { formatPlanName, clearAppAuthSession } from "@/lib/utils";
+import { useQueryClient } from "@tanstack/react-query";
 import { PortraitCard } from "@/components/ContentCard";
+import SubscriptionPlansModal from "@/components/SubscriptionPlansModal";
 
 type ContentType = "all" | "drama";
 
@@ -65,10 +67,27 @@ export default function CategoriesBrowsePage() {
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const queryClient = useQueryClient();
+
   useEffect(() => {
-    const stored = localStorage.getItem("appUser");
-    if (stored) try { setUser(JSON.parse(stored)); } catch {}
+    const loadUser = () => {
+      try {
+        const stored = localStorage.getItem("appUser") || localStorage.getItem("user");
+        if (stored) setUser(JSON.parse(stored));
+        else setUser(null);
+      } catch (e) {
+        setUser(null);
+      }
+    };
+    loadUser();
+    window.addEventListener("user-updated", loadUser);
+    return () => window.removeEventListener("user-updated", loadUser);
   }, []);
+
+  const handleSignOut = () => {
+    clearAppAuthSession(queryClient);
+    setUser(null);
+  };
 
   // Sync search query from URL
   useEffect(() => {
@@ -154,12 +173,7 @@ export default function CategoriesBrowsePage() {
     }
   };
 
-  const handleSignOut = () => {
-    localStorage.removeItem("appUser");
-    localStorage.removeItem("appAccessToken");
-    setUser(null);
-    window.location.reload();
-  };
+
 
   return (
     <div className="min-h-screen bg-[#030306] text-white">

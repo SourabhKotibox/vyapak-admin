@@ -1,4 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
+import { clearAppAuthSession } from "@/lib/utils";
 
 let baseUrl = import.meta.env.VITE_API_URL || "https://vyzpak.app";
 let getAuthToken = () => localStorage.getItem("appAccessToken");
@@ -30,13 +32,16 @@ export const getImageUrl = (filePath) => {
     if (s3Match) {
       return `${baseUrl}/${s3Match[1]}`;
     }
+    const uploadPathMatch = filePath.match(/https?:\/\/[^/]+\/(uploads\/.*)$/);
+    if (uploadPathMatch) {
+      return `${baseUrl.replace(/\/$/, "")}/${uploadPathMatch[1]}`;
+    }
     return filePath;
   }
 
   if (filePath.startsWith("/uploads/") || filePath.startsWith("uploads/")) {
     const cleanPath = filePath.startsWith("/") ? filePath.slice(1) : filePath;
-    const origin = typeof window !== 'undefined' ? window.location.origin : baseUrl;
-    return `${origin}/${cleanPath}`;
+    return `${baseUrl.replace(/\/$/, "")}/${cleanPath}`;
   }
 
   return `${baseUrl}/${filePath}`;
@@ -164,11 +169,7 @@ const api = async (
       const msg = (errorData.message || errorData.error || "").toLowerCase();
       if (msg.includes("expired") || msg.includes("invalid signature") || msg.includes("no authorization") || msg.includes("jwt")) {
         if (isAppRoute) {
-          // Clear all app session keys (both streaming-home and public-auth variants)
-          localStorage.removeItem("appAccessToken");
-          localStorage.removeItem("appUser");
-          localStorage.removeItem("accessToken");
-          localStorage.removeItem("user");
+          clearAppAuthSession();
           window.location.href = "/";
         } else {
           localStorage.removeItem("adminAccessToken");
@@ -1726,6 +1727,20 @@ export const updateSettingsData = async (data: Record<string, any>) => {
     body: JSON.stringify(data),
   });
   return response.data;
+};
+
+export const testS3Connection = async () => {
+  const response = await api("/settings/test-s3", {
+    method: "POST",
+  });
+  return response;
+};
+
+export const testDigitalOceanConnection = async () => {
+  const response = await api("/settings/test-digitalocean", {
+    method: "POST",
+  });
+  return response;
 };
 
 export const uploadSettingsLogos = async (formData: FormData) => {
@@ -3571,7 +3586,7 @@ export const getWishlist = async (options?: { page?: number; limit?: number }) =
 };
 
 export const toggleWishlistItem = async (data: { contentId: string; contentType: 'movie' | 'show' | 'drama' }) => {
-  const type = data.contentType === 'movie' ? 'movie' : 'show';
+  const type = data.contentType;
   return api('/app/wishlist', {
     method: 'POST',
     body: JSON.stringify({ contentId: data.contentId, type, profileId: getActiveProfileId() || undefined }),
@@ -3580,6 +3595,33 @@ export const toggleWishlistItem = async (data: { contentId: string; contentType:
 
 export const useGetWishlist = (options?: { page?: number; limit?: number }) => {
   const token = typeof window !== 'undefined' ? localStorage.getItem('appAccessToken') : null;
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    const handleWishlistChange = (event: StorageEvent) => {
+      if (event.key !== 'vyapak-wishlist-changed' || !event.newValue) return;
+
+      try {
+        const change = JSON.parse(event.newValue);
+        if (change.action === 'remove') {
+          queryClient.setQueriesData<any>({ queryKey: ['wishlist'] }, (wishlist) => {
+            if (!wishlist || !Array.isArray(wishlist.items)) return wishlist;
+            return {
+              ...wishlist,
+              items: wishlist.items.filter((item: any) => item.contentId !== change.contentId && item.id !== change.contentId),
+            };
+          });
+        }
+        queryClient.invalidateQueries({ queryKey: ['wishlist'] });
+      } catch {
+        queryClient.invalidateQueries({ queryKey: ['wishlist'] });
+      }
+    };
+
+    window.addEventListener('storage', handleWishlistChange);
+    return () => window.removeEventListener('storage', handleWishlistChange);
+  }, [queryClient]);
+
   return useQuery({
     queryKey: ['wishlist', options, token],
     queryFn: async () => {
@@ -3596,7 +3638,37 @@ export const useToggleWishlist = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: toggleWishlistItem,
-    onSuccess: () => {
+    onMutate: async (variables) => {
+      await queryClient.cancelQueries({ queryKey: ['wishlist'] });
+      const previousWishlists = queryClient.getQueriesData<any>({ queryKey: ['wishlist'] });
+
+      queryClient.setQueriesData<any>({ queryKey: ['wishlist'] }, (wishlist) => {
+        if (!wishlist || !Array.isArray(wishlist.items)) return wishlist;
+        const exists = wishlist.items.some((item: any) =>
+          item.id === variables.contentId || item.contentId === variables.contentId
+        );
+        return {
+          ...wishlist,
+          items: exists
+            ? wishlist.items.filter((item: any) => item.id !== variables.contentId && item.contentId !== variables.contentId)
+            : [...wishlist.items, { id: variables.contentId, contentId: variables.contentId, type: variables.contentType }],
+        };
+      });
+
+      return { previousWishlists };
+    },
+    onError: (_error, _variables, context) => {
+      context?.previousWishlists.forEach(([queryKey, wishlist]) => {
+        queryClient.setQueryData(queryKey, wishlist);
+      });
+    },
+    onSuccess: (result, variables) => {
+      const added = result?.isWishlisted ?? result?.data?.isWishlisted;
+      localStorage.setItem('vyapak-wishlist-changed', JSON.stringify({
+        action: added ? 'add' : 'remove',
+        contentId: variables.contentId,
+        at: Date.now(),
+      }));
       queryClient.invalidateQueries({ queryKey: ['wishlist'] });
       queryClient.invalidateQueries({ queryKey: ['app-profile'] });
     },
@@ -3627,6 +3699,35 @@ export const removeDownload = async (id: string) => {
 
 export const useGetDownloads = (options?: { page?: number; limit?: number }) => {
   const token = typeof window !== 'undefined' ? localStorage.getItem('appAccessToken') : null;
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    const handleDownloadChange = (event: StorageEvent) => {
+      if (event.key !== 'vyapak-downloads-changed' || !event.newValue) return;
+
+      try {
+        const change = JSON.parse(event.newValue);
+        queryClient.setQueriesData<any[]>({ queryKey: ['downloads'] }, (downloads) => {
+          if (!Array.isArray(downloads)) return downloads;
+          if (change.action === 'remove') {
+            return downloads.filter((download) => download.id !== change.id && download._id !== change.id);
+          }
+          if (change.action === 'add' && change.download) {
+            const exists = downloads.some((download) => download.id === change.download.id);
+            return exists ? downloads : [change.download, ...downloads];
+          }
+          return downloads;
+        });
+        queryClient.invalidateQueries({ queryKey: ['downloads'] });
+      } catch {
+        queryClient.invalidateQueries({ queryKey: ['downloads'] });
+      }
+    };
+
+    window.addEventListener('storage', handleDownloadChange);
+    return () => window.removeEventListener('storage', handleDownloadChange);
+  }, [queryClient]);
+
   return useQuery({
     queryKey: ['downloads', options, token],
     queryFn: async () => {
@@ -3645,6 +3746,28 @@ export const useRemoveDownload = () => {
     mutationFn: async ({ id }: { id: string; contentId: string; episodeId?: string }) => {
       return removeDownload(id);
     },
+    onMutate: async (variables) => {
+      await queryClient.cancelQueries({ queryKey: ['downloads'] });
+      const previousDownloads = queryClient.getQueriesData<any[]>({ queryKey: ['downloads'] });
+
+      queryClient.setQueriesData<any[]>({ queryKey: ['downloads'] }, (downloads) =>
+        Array.isArray(downloads)
+          ? downloads.filter((download) => download.id !== variables.id && download._id !== variables.id)
+          : downloads
+      );
+      localStorage.setItem('vyapak-downloads-changed', JSON.stringify({
+        action: 'remove',
+        id: variables.id,
+        at: Date.now(),
+      }));
+
+      return { previousDownloads };
+    },
+    onError: (_error, _variables, context) => {
+      context?.previousDownloads.forEach(([queryKey, downloads]) => {
+        queryClient.setQueryData(queryKey, downloads);
+      });
+    },
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['downloads'] });
       queryClient.invalidateQueries({ queryKey: ['app-profile'] });
@@ -3658,6 +3781,21 @@ export const useRequestDownload = () => {
   return useMutation({
     mutationFn: requestDownload,
     onSuccess: (res, variables) => {
+      const download = res?.data;
+      if (download) {
+        queryClient.setQueriesData<any[]>({ queryKey: ['downloads'] }, (downloads) => {
+          if (!Array.isArray(downloads)) return downloads;
+          const exists = downloads.some((item) =>
+            item.contentId === variables.contentId && item.episodeId === (variables.episodeId || null)
+          );
+          return exists ? downloads : [download, ...downloads];
+        });
+        localStorage.setItem('vyapak-downloads-changed', JSON.stringify({
+          action: 'add',
+          download,
+          at: Date.now(),
+        }));
+      }
       queryClient.invalidateQueries({ queryKey: ['downloads'] });
       queryClient.invalidateQueries({ queryKey: ['app-profile'] });
       if (res?.success && res?.data?.downloadUrl) {

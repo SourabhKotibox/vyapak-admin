@@ -7,7 +7,8 @@ import {
 } from "lucide-react";
 import { useGetWebDetail, getImageUrl, useGetWishlist, useToggleWishlist, useGetAppProfile, useRequestDownload } from "@/lib/api-client";
 import { PublicHeader, PublicFooter } from "@/pages/streaming-home";
-import SubscriptionPlansModal from "@/components/SubscriptionPlansModal";
+import { formatPlanName, clearAppAuthSession } from "@/lib/utils";
+import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 
 type Tab = "home" | "drama" | "new";
@@ -22,6 +23,7 @@ function fmtSecs(s?: number) {
 export default function TVShowDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
   const { toast } = useToast();
 
   const [activeTab, setActiveTab] = useState<Tab>("drama");
@@ -30,18 +32,27 @@ export default function TVShowDetailPage() {
   const [selectedSeason, setSelectedSeason] = useState(1);
 
   useEffect(() => {
-    try {
-      const storedUser = localStorage.getItem("appUser");
-      if (storedUser) setUser(JSON.parse(storedUser));
-    } catch {}
+    const loadUser = () => {
+      try {
+        const storedUser = localStorage.getItem("appUser") || localStorage.getItem("user");
+        if (storedUser) setUser(JSON.parse(storedUser));
+        else setUser(null);
+      } catch (e) {
+        setUser(null);
+      }
+    };
+    loadUser();
+    window.addEventListener("user-updated", loadUser);
+    return () => window.removeEventListener("user-updated", loadUser);
+  }, []);
+
+  useEffect(() => {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, [id]);
 
   const handleSignOut = () => {
-    localStorage.removeItem("appUser");
-    localStorage.removeItem("appAccessToken");
+    clearAppAuthSession(queryClient);
     setUser(null);
-    window.location.reload();
   };
 
   const isSubscribed = user?.subscriptionStatus === "active" && user?.subscriptionPlan !== "free";
@@ -58,11 +69,15 @@ export default function TVShowDetailPage() {
   const inWatchlist = wishlistItems.some((w: any) => w.id === id || w.contentId === id);
   const toggleWishlistMutation = useToggleWishlist();
 
+  const { data: profileData } = useGetAppProfile();
+  const currentUser = profileData?.user || profileData?.userProfile || user;
+
   const requestDownloadMutation = useRequestDownload();
   const [downloadingEp, setDownloadingEp] = useState<string | null>(null);
 
   const handleDownloadEpisode = async (ep: any) => {
     if (!user) { toast({ title: "Please sign in to download", variant: "destructive" }); return; }
+    if (ep.downloadAllowed === false) return;
     const epId = ep._id || ep.id;
     setDownloadingEp(epId);
     try {
@@ -275,14 +290,16 @@ export default function TVShowDetailPage() {
                       {ep.description && (
                         <p className="text-foreground text-xs mt-1 line-clamp-2 leading-relaxed">{ep.description}</p>
                       )}
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleDownloadEpisode(ep); }}
-                        disabled={downloadingEp === (ep._id || ep.id)}
-                        className="mt-2 flex items-center gap-1 text-[10px] font-bold text-foreground hover:text-emerald-400 transition-colors disabled:opacity-50"
-                      >
-                        {downloadingEp === (ep._id || ep.id) ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
-                        {downloadingEp === (ep._id || ep.id) ? "Adding..." : "Download"}
-                      </button>
+                      {Boolean(currentUser && currentUser.downloadAllowed && ep.downloadAllowed !== false) && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleDownloadEpisode(ep); }}
+                          disabled={downloadingEp === (ep._id || ep.id)}
+                          className="mt-2 flex items-center gap-1 text-[10px] font-bold text-foreground hover:text-emerald-400 transition-colors disabled:opacity-50"
+                        >
+                          {downloadingEp === (ep._id || ep.id) ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
+                          {downloadingEp === (ep._id || ep.id) ? "Adding..." : "Download"}
+                        </button>
+                      )}
                     </div>
                   </div>
                 );

@@ -6,6 +6,8 @@ export interface AppSettings {
   logoUrl: string;
   darkLogoUrl: string;
   lightLogoUrl: string;
+  darkLogoWidth: number;
+  lightLogoWidth: number;
   faviconUrl: string;
   logoStyle: 'icon' | 'fill';
   platformName: string;
@@ -88,10 +90,19 @@ export interface AppSettings {
   currencyPosition: 'before' | 'after';
   decimalPlaces: number;
   // Storage
-  storageDriver: 'local' | 'bunny';
+  storageDriver: 'local' | 's3' | 'digitalocean' | 'bunny';
+  awsAccessKeyId: string;
+  awsSecretAccessKey: string;
+  awsRegion: string;
+  awsBucket: string;
   bunnyStorageZone: string;
   bunnyAccessKey: string;
   bunnyCdnUrl: string;
+  digitalOceanSpace: string;
+  digitalOceanRegion: string;
+  digitalOceanEndpoint: string;
+  digitalOceanAccessKey: string;
+  digitalOceanSecretKey: string;
   // SEO
   metaTitle: string;
   metaDescription: string;
@@ -121,6 +132,8 @@ const DEFAULT: AppSettings = {
   logoUrl: "",
   darkLogoUrl: "",
   lightLogoUrl: "",
+  darkLogoWidth: 180,
+  lightLogoWidth: 180,
   faviconUrl: "",
   logoStyle: "fill",
   platformName: "Vyzpak",
@@ -204,9 +217,18 @@ const DEFAULT: AppSettings = {
   decimalPlaces: 2,
   // Storage
    storageDriver: 'local',
+   awsAccessKeyId: "",
+   awsSecretAccessKey: "",
+   awsRegion: "",
+   awsBucket: "",
    bunnyStorageZone: "",
   bunnyAccessKey: "",
   bunnyCdnUrl: "",
+  digitalOceanSpace: "",
+  digitalOceanRegion: "",
+  digitalOceanEndpoint: "",
+  digitalOceanAccessKey: "",
+  digitalOceanSecretKey: "",
   // SEO
   metaTitle: "",
   metaDescription: "",
@@ -240,6 +262,8 @@ function mapApiData(api: any): AppSettings {
     logoUrl: img(api.logoUrl),
     darkLogoUrl: img(api.darkLogoUrl),
     lightLogoUrl: img(api.lightLogoUrl),
+    darkLogoWidth: Number(api.darkLogoWidth) || DEFAULT.darkLogoWidth,
+    lightLogoWidth: Number(api.lightLogoWidth) || DEFAULT.lightLogoWidth,
     faviconUrl: img(api.faviconUrl),
     logoStyle: api.logoStyle || DEFAULT.logoStyle,
     platformName: api.platformName || "",
@@ -323,9 +347,18 @@ function mapApiData(api: any): AppSettings {
     decimalPlaces: api.decimalPlaces ?? DEFAULT.decimalPlaces,
     // Storage
      storageDriver: api.storageDriver || DEFAULT.storageDriver,
+     awsAccessKeyId: api.awsAccessKeyId || "",
+     awsSecretAccessKey: api.awsSecretAccessKey || "",
+     awsRegion: api.awsRegion || "",
+     awsBucket: api.awsBucket || "",
      bunnyStorageZone: api.bunnyStorageZone || "",
     bunnyAccessKey: api.bunnyAccessKey || "",
     bunnyCdnUrl: api.bunnyCdnUrl || "",
+    digitalOceanSpace: api.digitalOceanSpace || "",
+    digitalOceanRegion: api.digitalOceanRegion || "",
+    digitalOceanEndpoint: api.digitalOceanEndpoint || "",
+    digitalOceanAccessKey: api.digitalOceanAccessKey || "",
+    digitalOceanSecretKey: api.digitalOceanSecretKey || "",
     // SEO
     metaTitle: api.metaTitle || "",
     metaDescription: api.metaDescription || "",

@@ -43,7 +43,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { useDeleteAccount, useUpdateSettings, useUploadSettingsLogos, useGetEmailStatus, useTestEmail, getImageUrl } from "@/lib/api-client";
+import { useDeleteAccount, useUpdateSettings, useGetEmailStatus, useTestEmail, getImageUrl, testS3Connection } from "@/lib/api-client";
 import { useSettings, applyColorTheme, applyBodyClasses } from "@/contexts/SettingsContext";
 import { useTheme } from "next-themes";
 import MediaPicker from "@/components/MediaPicker";
@@ -134,7 +134,6 @@ export default function Settings() {
   const deleteAccountMutation = useDeleteAccount();
   const { settings: ctxSettings, updateSettings: updateCtx, refreshSettings } = useSettings();
   const updateSettingsMutation = useUpdateSettings();
-  const uploadLogosMutation = useUploadSettingsLogos();
   const { data: emailStatus, refetch: refetchEmailStatus } = useGetEmailStatus();
   const testEmailMutation = useTestEmail();
   const { resolvedTheme, setTheme } = useTheme();
@@ -204,6 +203,8 @@ export default function Settings() {
   const [lightLogoPreview, setLightLogoPreview] = useState<string>(ctxSettings.lightLogoUrl || "");
   const [darkLogoPreview, setDarkLogoPreview] = useState<string>(ctxSettings.darkLogoUrl || "");
   const [faviconPreview, setFaviconPreview] = useState<string>(ctxSettings.faviconUrl || "");
+  const [lightLogoWidth, setLightLogoWidth] = useState(ctxSettings.lightLogoWidth || 180);
+  const [darkLogoWidth, setDarkLogoWidth] = useState(ctxSettings.darkLogoWidth || 180);
 
   type LogoType = "lightLogo" | "darkLogo" | "favicon" | null;
   const [mediaPickerType, setMediaPickerType] = useState<LogoType>(null);
@@ -219,6 +220,14 @@ export default function Settings() {
   useEffect(() => {
     setFaviconPreview(ctxSettings.faviconUrl || "");
   }, [ctxSettings.faviconUrl]);
+
+  useEffect(() => {
+    setLightLogoWidth(ctxSettings.lightLogoWidth || 180);
+  }, [ctxSettings.lightLogoWidth]);
+
+  useEffect(() => {
+    setDarkLogoWidth(ctxSettings.darkLogoWidth || 180);
+  }, [ctxSettings.darkLogoWidth]);
 
   const handleSaveBusiness = async () => {
     setSaving(true);
@@ -237,9 +246,18 @@ export default function Settings() {
         logoStyle: business.logoStyle,
         lightLogoUrl: lightLogoPreview !== ctxSettings.lightLogoUrl ? lightLogoPreview : undefined,
         darkLogoUrl: darkLogoPreview !== ctxSettings.darkLogoUrl ? darkLogoPreview : undefined,
+        lightLogoWidth,
+        darkLogoWidth,
         faviconUrl: faviconPreview !== ctxSettings.faviconUrl ? faviconPreview : undefined,
       });
-      updateCtx({ ...business });
+      updateCtx({
+        ...business,
+        lightLogoUrl: lightLogoPreview,
+        darkLogoUrl: darkLogoPreview,
+        lightLogoWidth,
+        darkLogoWidth,
+        faviconUrl: faviconPreview,
+      });
       await refreshSettings();
       toast({ title: "Business settings saved!" });
     } catch (err: any) {
@@ -550,37 +568,147 @@ export default function Settings() {
   };
 
   // ── Storage Settings ───────────────────────────────────────────────────
-   const [storage, setStorage] = useState({
-     localStorage: ctxSettings.storageDriver === 'local',
-   });
+  const [storage, setStorage] = useState({
+    driver: ctxSettings.storageDriver || 'local',
+    awsAccessKeyId: ctxSettings.awsAccessKeyId || '',
+    awsSecretAccessKey: ctxSettings.awsSecretAccessKey || '',
+    awsRegion: ctxSettings.awsRegion || '',
+    awsBucket: ctxSettings.awsBucket || '',
+    digitalOceanSpace: ctxSettings.digitalOceanSpace || '',
+    digitalOceanRegion: ctxSettings.digitalOceanRegion || '',
+    digitalOceanEndpoint: ctxSettings.digitalOceanEndpoint || '',
+    digitalOceanAccessKey: ctxSettings.digitalOceanAccessKey || '',
+    digitalOceanSecretKey: ctxSettings.digitalOceanSecretKey || '',
+  });
 
-   useEffect(() => {
-     setStorage({
-       localStorage: ctxSettings.storageDriver === 'local',
-     });
-   }, [
-     ctxSettings.storageDriver,
-   ]);
+  const [testingS3, setTestingS3] = useState(false);
+  const [s3Status, setS3Status] = useState<"Not Configured" | "Configured" | "Testing Connection" | "Connection Successful" | "Connection Failed" | "Saving" | "Saved Successfully">("Not Configured");
 
-   const handleSaveStorage = async () => {
-     setSaving(true);
-     try {
-      const driver: 'local' | 'bunny' = storage.localStorage ? 'local' : 'bunny';
+  const [testingDO, setTestingDO] = useState(false);
+  const [doStatus, setDOStatus] = useState<"Not Configured" | "Configured" | "Testing Connection" | "Connection Successful" | "Connection Failed" | "Saving" | "Saved Successfully">("Not Configured");
 
-      await updateSettingsMutation.mutateAsync({
-        storageDriver: driver,
-      });
+  useEffect(() => {
+    setStorage({
+      driver: ctxSettings.storageDriver || 'local',
+      awsAccessKeyId: ctxSettings.awsAccessKeyId || '',
+      awsSecretAccessKey: ctxSettings.awsSecretAccessKey || '',
+      awsRegion: ctxSettings.awsRegion || '',
+      awsBucket: ctxSettings.awsBucket || '',
+      digitalOceanSpace: ctxSettings.digitalOceanSpace || '',
+      digitalOceanRegion: ctxSettings.digitalOceanRegion || '',
+      digitalOceanEndpoint: ctxSettings.digitalOceanEndpoint || '',
+      digitalOceanAccessKey: ctxSettings.digitalOceanAccessKey || '',
+      digitalOceanSecretKey: ctxSettings.digitalOceanSecretKey || '',
+    });
+    
+    if (ctxSettings.awsAccessKeyId && ctxSettings.awsSecretAccessKey && ctxSettings.awsBucket) {
+      setS3Status("Configured");
+    } else {
+      setS3Status("Not Configured");
+    }
+
+    if (ctxSettings.digitalOceanAccessKey && ctxSettings.digitalOceanSecretKey && ctxSettings.digitalOceanSpace) {
+      setDOStatus("Configured");
+    } else {
+      setDOStatus("Not Configured");
+    }
+  }, [
+    ctxSettings.storageDriver,
+    ctxSettings.awsAccessKeyId,
+    ctxSettings.awsSecretAccessKey,
+    ctxSettings.awsRegion,
+    ctxSettings.awsBucket,
+    ctxSettings.digitalOceanSpace,
+    ctxSettings.digitalOceanRegion,
+    ctxSettings.digitalOceanEndpoint,
+    ctxSettings.digitalOceanAccessKey,
+    ctxSettings.digitalOceanSecretKey,
+  ]);
+
+  const handleSaveStorage = async () => {
+    setSaving(true);
+    setS3Status("Saving");
+    setDOStatus("Saving");
+    try {
+      const payload: any = {
+        storageDriver: storage.driver,
+        awsAccessKeyId: storage.awsAccessKeyId,
+        awsRegion: storage.awsRegion,
+        awsBucket: storage.awsBucket,
+        digitalOceanSpace: storage.digitalOceanSpace,
+        digitalOceanRegion: storage.digitalOceanRegion,
+        digitalOceanEndpoint: storage.digitalOceanEndpoint,
+        digitalOceanAccessKey: storage.digitalOceanAccessKey,
+      };
+      
+      // Only send secret key if it was modified (not just asterisks)
+      if (storage.awsSecretAccessKey.trim() && storage.awsSecretAccessKey !== "********") {
+        payload.awsSecretAccessKey = storage.awsSecretAccessKey;
+      }
+      if (storage.digitalOceanSecretKey.trim() && storage.digitalOceanSecretKey !== "********") {
+        payload.digitalOceanSecretKey = storage.digitalOceanSecretKey;
+      }
+
+      await updateSettingsMutation.mutateAsync(payload);
+      
       updateCtx({
-        storageDriver: driver,
+        storageDriver: storage.driver as any,
+        awsAccessKeyId: storage.awsAccessKeyId,
+        awsRegion: storage.awsRegion,
+        awsBucket: storage.awsBucket,
+        digitalOceanSpace: storage.digitalOceanSpace,
+        digitalOceanRegion: storage.digitalOceanRegion,
+        digitalOceanEndpoint: storage.digitalOceanEndpoint,
+        digitalOceanAccessKey: storage.digitalOceanAccessKey,
+        // Don't update the secret in context so we don't accidentally leak it
       });
       await refreshSettings();
       toast({ title: "Storage settings saved!" });
+      setS3Status("Saved Successfully");
+      setDOStatus("Saved Successfully");
+      setTimeout(() => {
+        setS3Status("Configured");
+        setDOStatus("Configured");
+      }, 3000);
     } catch (err: any) {
       toast({ title: err?.message || "Save failed", variant: "destructive" });
+      setS3Status("Connection Failed");
+      setDOStatus("Connection Failed");
     } finally {
       setSaving(false);
     }
-   };
+  };
+
+  const handleTestS3 = async () => {
+    setTestingS3(true);
+    setS3Status("Testing Connection");
+    try {
+      const result = await testS3Connection();
+      toast({ title: result.message || "S3 Connection Successful!" });
+      setS3Status("Connection Successful");
+    } catch (err: any) {
+      toast({ title: err?.message || "S3 Connection Failed", variant: "destructive" });
+      setS3Status("Connection Failed");
+    } finally {
+      setTestingS3(false);
+    }
+  };
+
+  const handleTestDO = async () => {
+    setTestingDO(true);
+    setDOStatus("Testing Connection");
+    try {
+      const { testDigitalOceanConnection } = await import("@/lib/api-client");
+      const result = await testDigitalOceanConnection();
+      toast({ title: result.message || "DO Connection Successful!" });
+      setDOStatus("Connection Successful");
+    } catch (err: any) {
+      toast({ title: err?.message || "DO Connection Failed", variant: "destructive" });
+      setDOStatus("Connection Failed");
+    } finally {
+      setTestingDO(false);
+    }
+  };
 
   // ── SEO Settings ───────────────────────────────────────────────────────
   const [seo, setSeo] = useState({
@@ -687,10 +815,14 @@ export default function Settings() {
     label,
     preview,
     onClick,
+    width,
+    onWidthChange,
   }: {
     label: string;
     preview: string;
     onClick: () => void;
+    width?: number;
+    onWidthChange?: (width: number) => void;
   }) => (
     <div className="space-y-2">
       <Label className={labelCls}>{label}</Label>
@@ -712,6 +844,24 @@ export default function Settings() {
           </>
         )}
       </div>
+      {preview && width && onWidthChange && (
+        <div className="space-y-1" onClick={(event) => event.stopPropagation()}>
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span>Logo width</span>
+            <span>{width}px</span>
+          </div>
+          <input
+            type="range"
+            min="40"
+            max="600"
+            step="1"
+            value={width}
+            onChange={(event) => onWidthChange(Number(event.target.value))}
+            className="w-full accent-primary"
+            aria-label={`${label} width`}
+          />
+        </div>
+      )}
     </div>
   );
 
@@ -726,11 +876,15 @@ export default function Settings() {
           <LogoUploadBox
             label="Light Theme Logo"
             preview={lightLogoPreview}
+            width={lightLogoWidth}
+            onWidthChange={setLightLogoWidth}
             onClick={() => setMediaPickerType("lightLogo")}
           />
           <LogoUploadBox
             label="Dark Theme Logo"
             preview={darkLogoPreview}
+            width={darkLogoWidth}
+            onWidthChange={setDarkLogoWidth}
             onClick={() => setMediaPickerType("darkLogo")}
           />
           <LogoUploadBox
@@ -745,9 +899,10 @@ export default function Settings() {
         open={mediaPickerType !== null}
         onClose={() => setMediaPickerType(null)}
         onSelect={(media) => {
-          if (mediaPickerType === "lightLogo") setLightLogoPreview(media.url);
-          else if (mediaPickerType === "darkLogo") setDarkLogoPreview(media.url);
-          else if (mediaPickerType === "favicon") setFaviconPreview(media.url);
+          const filePath = media.filePath || media.url || "";
+          if (mediaPickerType === "lightLogo") setLightLogoPreview(filePath);
+          else if (mediaPickerType === "darkLogo") setDarkLogoPreview(filePath);
+          else if (mediaPickerType === "favicon") setFaviconPreview(filePath);
           setMediaPickerType(null);
         }}
         source="settings"
@@ -1373,13 +1528,16 @@ export default function Settings() {
     </div>
   );
 
+
   const renderStorage = () => (
     <div>
       <SectionTitle icon={HardDrive} label="Storage Settings" />
       <div className="space-y-0 mb-6 rounded-lg border border-border overflow-hidden">
         {(
           [
-            { key: "localStorage", label: "Local Storage" },
+            { key: "local", label: "Local Storage" },
+            { key: "s3", label: "AWS S3 Storage" },
+            { key: "digitalocean", label: "DigitalOcean Spaces" }
           ] as const
         ).map(({ key, label }, i, arr) => (
           <div
@@ -1390,18 +1548,165 @@ export default function Settings() {
           >
             <span className="text-foreground font-medium">{label}</span>
             <Switch
-              checked={storage[key]}
+              checked={storage.driver === key}
               onCheckedChange={(v) => {
-                setStorage({
-                  ...storage,
-                  localStorage: key === "localStorage" ? v : false,
-                });
+                if (v) {
+                  setStorage({ ...storage, driver: key as any });
+                } else if (storage.driver === key) {
+                  setStorage({ ...storage, driver: "local" }); // Fallback
+                }
               }}
               className="data-[state=checked]:bg-primary"
             />
           </div>
         ))}
       </div>
+
+      {storage.driver === "s3" && (
+        <div className="bg-muted/10 border border-border rounded-lg p-5 mb-6 space-y-5 relative">
+          <div className="absolute top-4 right-4 flex items-center gap-2">
+            <span className={`text-xs font-semibold px-2 py-1 rounded-full ${
+              s3Status === "Connection Successful" || s3Status === "Saved Successfully" ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" :
+              s3Status === "Connection Failed" ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" :
+              s3Status === "Testing Connection" || s3Status === "Saving" ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400" :
+              "bg-gray-100 text-gray-700 dark:bg-zinc-800 dark:text-zinc-300"
+            }`}>
+              {s3Status}
+            </span>
+          </div>
+
+          <h3 className="text-md font-semibold text-foreground">AWS S3 Configuration</h3>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div className="space-y-2">
+              <Label className={labelCls}>Bucket Name</Label>
+              <Input
+                value={storage.awsBucket}
+                onChange={(e) => setStorage({ ...storage, awsBucket: e.target.value })}
+                placeholder="my-vyzpak-bucket"
+                className={inputCls}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className={labelCls}>AWS Region</Label>
+              <Input
+                value={storage.awsRegion}
+                onChange={(e) => setStorage({ ...storage, awsRegion: e.target.value })}
+                placeholder="us-east-1"
+                className={inputCls}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className={labelCls}>Access Key ID</Label>
+              <Input
+                value={storage.awsAccessKeyId}
+                onChange={(e) => setStorage({ ...storage, awsAccessKeyId: e.target.value })}
+                placeholder="AKIAIOSFODNN7EXAMPLE"
+                className={inputCls}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className={labelCls}>Secret Access Key</Label>
+              <SecretInput
+                value={storage.awsSecretAccessKey}
+                onChange={(e) => setStorage({ ...storage, awsSecretAccessKey: e.target.value })}
+                placeholder="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+                className={inputCls}
+              />
+            </div>
+          </div>
+
+          <div className="pt-2 flex justify-end">
+             <Button
+                variant="outline"
+                type="button"
+                onClick={handleTestS3}
+                disabled={testingS3 || !storage.awsBucket || !storage.awsAccessKeyId}
+                className="border-border text-foreground hover:bg-muted"
+              >
+                {testingS3 ? "Testing..." : "Test Connection"}
+              </Button>
+          </div>
+        </div>
+      )}
+
+      {storage.driver === "digitalocean" && (
+        <div className="bg-muted/10 border border-border rounded-lg p-5 mb-6 space-y-5 relative">
+          <div className="absolute top-4 right-4 flex items-center gap-2">
+            <span className={`text-xs font-semibold px-2 py-1 rounded-full ${
+              doStatus === "Connection Successful" || doStatus === "Saved Successfully" ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" :
+              doStatus === "Connection Failed" ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" :
+              doStatus === "Testing Connection" || doStatus === "Saving" ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400" :
+              "bg-gray-100 text-gray-700 dark:bg-zinc-800 dark:text-zinc-300"
+            }`}>
+              {doStatus}
+            </span>
+          </div>
+
+          <h3 className="text-md font-semibold text-foreground">DigitalOcean Spaces Configuration</h3>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div className="space-y-2">
+              <Label className={labelCls}>Space Name</Label>
+              <Input
+                value={storage.digitalOceanSpace}
+                onChange={(e) => setStorage({ ...storage, digitalOceanSpace: e.target.value })}
+                placeholder="my-vyzpak-space"
+                className={inputCls}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className={labelCls}>Region</Label>
+              <Input
+                value={storage.digitalOceanRegion}
+                onChange={(e) => setStorage({ ...storage, digitalOceanRegion: e.target.value })}
+                placeholder="nyc3"
+                className={inputCls}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className={labelCls}>Endpoint</Label>
+              <Input
+                value={storage.digitalOceanEndpoint}
+                onChange={(e) => setStorage({ ...storage, digitalOceanEndpoint: e.target.value })}
+                placeholder="https://nyc3.digitaloceanspaces.com"
+                className={inputCls}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className={labelCls}>Access Key</Label>
+              <Input
+                value={storage.digitalOceanAccessKey}
+                onChange={(e) => setStorage({ ...storage, digitalOceanAccessKey: e.target.value })}
+                placeholder="DO00EXAMPLEKEY"
+                className={inputCls}
+              />
+            </div>
+            <div className="space-y-2 md:col-span-2">
+              <Label className={labelCls}>Secret Key</Label>
+              <SecretInput
+                value={storage.digitalOceanSecretKey}
+                onChange={(e) => setStorage({ ...storage, digitalOceanSecretKey: e.target.value })}
+                placeholder="Enter DigitalOcean Secret Key"
+                className={inputCls}
+              />
+            </div>
+          </div>
+
+          <div className="pt-2 flex justify-end">
+             <Button
+                variant="outline"
+                type="button"
+                onClick={handleTestDO}
+                disabled={testingDO || !storage.digitalOceanSpace || !storage.digitalOceanAccessKey}
+                className="border-border text-foreground hover:bg-muted"
+              >
+                {testingDO ? "Testing..." : "Test Connection"}
+              </Button>
+          </div>
+        </div>
+      )}
+
       <SaveBtn saving={saving} onClick={handleSaveStorage} />
     </div>
   );

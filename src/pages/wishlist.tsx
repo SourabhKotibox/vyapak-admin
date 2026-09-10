@@ -3,16 +3,27 @@ import { useLocation } from "wouter";
 import { Loader2, ArrowLeft, Bookmark, Trash2, Play } from "lucide-react";
 import { useGetWishlist, useToggleWishlist, getImageUrl } from "@/lib/api-client";
 import { PublicHeader, PublicFooter } from "@/pages/streaming-home";
+import { formatPlanName, clearAppAuthSession } from "@/lib/utils";
+import { useQueryClient } from "@tanstack/react-query";
 
 export default function WishlistPage() {
   const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
   const [user, setUser] = useState<any>(null);
 
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem("appUser");
-      if (stored) setUser(JSON.parse(stored));
-    } catch {}
+    const loadUser = () => {
+      try {
+        const stored = localStorage.getItem("appUser") || localStorage.getItem("user");
+        if (stored) setUser(JSON.parse(stored));
+        else setUser(null);
+      } catch (e) {
+        setUser(null);
+      }
+    };
+    loadUser();
+    window.addEventListener("user-updated", loadUser);
+    return () => window.removeEventListener("user-updated", loadUser);
   }, []);
 
   const { data: wishlistData, isLoading, refetch } = useGetWishlist({ limit: 100 });
@@ -29,20 +40,16 @@ export default function WishlistPage() {
   };
 
   const handleRemove = (item: any) => {
-    const contentType = item.contentType === "drama" ? "drama" : "show";
+    const contentType = item.contentType === "movie" ? "movie" : item.contentType === "drama" ? "drama" : "show";
     toggleWishlist(
       { contentId: item.contentId || item.id, contentType: contentType as any },
-      { onSuccess: () => refetch() }
+      { onError: () => refetch() }
     );
   };
 
   const handleSignOut = () => {
-    localStorage.removeItem("appUser");
-    localStorage.removeItem("appAccessToken");
-    localStorage.removeItem("refreshToken");
-    localStorage.removeItem("ott_active_profile");
-    setLocation("/login");
-    window.location.reload();
+    clearAppAuthSession(queryClient);
+    setUser(null);
   };
 
   return (

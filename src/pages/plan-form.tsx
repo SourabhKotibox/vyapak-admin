@@ -308,9 +308,12 @@ export default function PlanFormPage() {
             <Label className={labelCls}>Status</Label>
             <div className="h-11 px-4 rounded-lg border border-border bg-muted flex items-center justify-between">
               <span className="text-sm text-foreground font-medium">
-                {status ? "Active" : "Inactive"}
+                {name.toLowerCase() === "free" ? "Active (Always)" : (status ? "Active" : "Inactive")}
               </span>
-              <Switch checked={status} onCheckedChange={setStatus}
+              <Switch 
+                checked={name.toLowerCase() === "free" ? true : status} 
+                disabled={name.toLowerCase() === "free"}
+                onCheckedChange={setStatus}
                 className="data-[state=checked]:bg-primary" />
             </div>
           </div>

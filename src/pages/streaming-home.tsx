@@ -19,6 +19,8 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { WebsiteReviews } from "@/components/WebsiteReviews";
 import { PortraitCard, LandscapeCard } from "@/components/ContentCard";
 import SubscriptionPlansModal from "@/components/SubscriptionPlansModal";
+import { formatPlanName, clearAppAuthSession } from "@/lib/utils";
+import { useQueryClient } from "@tanstack/react-query";
 
 /* ─── TYPES ─── */
 interface ContentItem {
@@ -952,7 +954,7 @@ function UserDropdown({ onSignIn, onSignOut, user }: { onSignIn: () => void; onS
             {user && <Crown className="w-3.5 h-3.5 text-amber-500 fill-amber-500 flex-shrink-0" />}
           </div>
           <p className="text-white text-[11px] truncate mt-1 leading-none font-medium">
-            {user ? "Premium Member" : "Sign in for full access"}
+            {user ? `${formatPlanName(user.subscriptionPlan)} Plan` : "Sign in for full access"}
           </p>
         </div>
       </div>
@@ -960,7 +962,7 @@ function UserDropdown({ onSignIn, onSignOut, user }: { onSignIn: () => void; onS
       <div className="p-1.5 space-y-0.5">
         {[
           { label: "Account Settings", href: "/account", icon: <User className="w-4 h-4" /> },
-          { label: "My Watchlist", href: "/wishlist", icon: <Bookmark className="w-4 h-4" /> },
+          { label: "My Wishlist", href: "/wishlist", icon: <Bookmark className="w-4 h-4" /> },
           { label: "Help & Support", href: "/help-support", icon: <AlertCircle className="w-4 h-4" /> },
         ].map((opt) => (
           <button
@@ -1084,7 +1086,7 @@ function SignInModal({ onClose }: { onClose: () => void }) {
           <div className="absolute inset-0 bg-gradient-to-br from-red-600/30 via-black/90 to-[#030306]/95 z-0" />
           <div className="relative z-10 flex flex-col items-center justify-center h-full gap-3">
             {logoUrl ? (
-              <img src={logoUrl} alt={settings.platformName || "StreamIT"} className="h-16 w-auto object-contain drop-shadow-2xl" />
+              <img src={logoUrl} alt={settings.platformName || "StreamIT"} style={{ width: resolvedTheme === "dark" ? settings.darkLogoWidth : settings.lightLogoWidth, height: "auto" }} className="max-w-full object-contain drop-shadow-2xl" />
             ) : (
               <>
                 <div className="w-12 h-12 rounded-2xl bg-red-600 flex items-center justify-center shadow-lg shadow-red-600/50">
@@ -1316,7 +1318,7 @@ export function PublicHeader({ activeTab, setActiveTab, onSignIn, onSignOut, use
             <div className="flex items-center gap-6 lg:gap-8">
               <Link href="/" className="flex items-center gap-2.5 flex-shrink-0 group">
                 {logoUrl ? (
-                  <img src={logoUrl} alt={settings.platformName || "StreamIT"} className="h-8 w-auto object-contain group-hover:scale-105 transition-transform" />
+                  <img src={logoUrl} alt={settings.platformName || "StreamIT"} style={{ width: resolvedTheme === "dark" ? settings.darkLogoWidth : settings.lightLogoWidth, height: "auto" }} className="max-w-full object-contain group-hover:scale-105 transition-transform" />
                 ) : (
                   <>
                     <div className="w-8 h-8 rounded-lg bg-red-600 flex items-center justify-center shadow-lg shadow-red-600/50 group-hover:scale-105 transition-transform">
@@ -1531,7 +1533,7 @@ export function PublicFooter() {
           <div className="space-y-4">
             <div className="flex items-center gap-2.5">
               {logoUrl ? (
-                <img src={logoUrl} alt={settings.platformName || "StreamIT"} className="h-9 w-auto object-contain" />
+                <img src={logoUrl} alt={settings.platformName || "StreamIT"} style={{ width: resolvedTheme === "dark" ? settings.darkLogoWidth : settings.lightLogoWidth, height: "auto" }} className="max-w-full object-contain" />
               ) : (
                 <>
                   <div className="w-8 h-8 rounded-lg bg-red-600 flex items-center justify-center shadow-lg shadow-red-600/40">
@@ -1643,6 +1645,7 @@ export function PublicFooter() {
 /* ─── MAIN PAGE ─── */
 export default function StreamingHomePage() {
   const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<Tab>("home");
   const [showSignIn, setShowSignIn] = useState(false);
   const [user, setUser] = useState<any>(null);
@@ -1694,12 +1697,8 @@ export default function StreamingHomePage() {
   }, [activeTab, settings?.platformName]);
 
   const handleSignOut = () => {
-    localStorage.removeItem("appUser");
-    localStorage.removeItem("appAccessToken");
-    localStorage.removeItem("user");
-    localStorage.removeItem("accessToken");
+    clearAppAuthSession(queryClient);
     setUser(null);
-    window.location.reload();
   };
 
   const isSubscribed = user?.subscriptionStatus === "active" && user?.subscriptionPlan !== "free";

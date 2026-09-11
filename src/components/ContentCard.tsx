@@ -69,9 +69,9 @@ function ImdbBadge({ rating }: { rating: any }) {
 // Leave fullWidth=false (default) when inside a horizontal scroll row.
 
 const portraitWidths = {
-  sm: "w-[140px] sm:w-[160px]",
-  md: "w-[165px] sm:w-[195px] lg:w-[220px]",
-  lg: "w-[190px] sm:w-[225px] lg:w-[260px]",
+  sm: "w-[120px] sm:w-[135px]",
+  md: "w-[135px] sm:w-[150px] lg:w-[170px]",
+  lg: "w-[150px] sm:w-[170px] lg:w-[190px]",
 };
 
 export function PortraitCard({
@@ -104,8 +104,8 @@ export function PortraitCard({
     >
       {/* Image container */}
       <div
-         className="relative rounded-xl overflow-hidden bg-zinc-900 group-hover:ring-2 group-hover:ring-red-500/40 transition-all duration-300"
-        style={{ aspectRatio: "2/3" }}
+         className="relative rounded-[7px] overflow-hidden bg-zinc-900 group-hover:ring-2 group-hover:ring-red-500/40 transition-all duration-300"
+        style={{ aspectRatio: "3/4" }}
       >
         {/* Poster image */}
         <img
@@ -134,20 +134,18 @@ export function PortraitCard({
           </div>
         )}
 
-        {/* Bottom-left: TV pill for shows */}
-        {isShow && (
-          <div className="absolute bottom-11 left-2 z-10">
-            <span className="px-1.5 py-0.5 bg-white/15 border border-white/20 text-foreground text-[9px] font-black rounded-md leading-none">
+        {/* Bottom info (Title, Content type, Year/Duration) */}
+        <div className="absolute bottom-0 left-0 right-0 px-2.5 pb-1.5 pt-12 z-10 pointer-events-none flex flex-col gap-[3px] items-start">
+          <p className="text-foreground font-bold text-[11px] truncate leading-tight w-full">{item.title}</p>
+          
+          {isShow && (
+            <span className="inline-block px-1.5 py-0.5 bg-white/15 border border-white/20 text-foreground text-[9px] font-black rounded-md leading-none -mt-[5px] mb-[3px]">
               TV
             </span>
-          </div>
-        )}
+          )}
 
-        {/* Bottom info (always visible) */}
-        <div className="absolute bottom-0 left-0 right-0 px-2.5 pb-2.5 pt-6 z-10 pointer-events-none">
-          <p className="text-foreground font-bold text-xs truncate leading-tight">{item.title}</p>
           {(year || duration) && (
-            <p className="text-foreground/80 text-[10px] mt-0.5 truncate">
+            <p className="text-foreground/80 text-[9px] leading-none truncate w-full">
               {[year, duration].filter(Boolean).join(" · ")}
             </p>
           )}
@@ -155,14 +153,14 @@ export function PortraitCard({
 
         {/* Play button — bottom-right corner */}
         <button
-          className="absolute bottom-2.5 right-2.5 z-20 w-9 h-9 rounded-full bg-red-600 flex items-center justify-center opacity-0 group-hover:opacity-100 scale-90 group-hover:scale-100 transition-all duration-200 shadow-lg pointer-events-auto"
+          className="absolute bottom-2.5 right-2.5 z-20 w-8 h-8 rounded-full bg-red-600 flex items-center justify-center opacity-0 group-hover:opacity-100 scale-90 group-hover:scale-100 transition-all duration-200 shadow-lg pointer-events-auto"
           onClick={(e) => {
             e.stopPropagation();
             onClick();
           }}
           aria-label="Play"
         >
-          <Play className="w-4 h-4 text-foreground fill-white ml-0.5" />
+          <Play className="w-3.5 h-3.5 text-foreground fill-white ml-0.5" />
         </button>
       </div>
     </div>
@@ -173,9 +171,9 @@ export function PortraitCard({
 // Use fullWidth=true when inside a CSS grid.
 
 const landscapeWidths = {
-  sm: "w-[260px] sm:w-[300px]",
-  md: "w-[300px] sm:w-[360px] lg:w-[420px]",
-  lg: "w-[340px] sm:w-[400px] lg:w-[480px]",
+  sm: "w-[200px] sm:w-[230px]",
+  md: "w-[230px] sm:w-[260px] lg:w-[290px]",
+  lg: "w-[260px] sm:w-[290px] lg:w-[320px]",
 };
 
 export function LandscapeCard({
@@ -201,7 +199,7 @@ export function LandscapeCard({
       onClick={onClick}
     >
       <div
-         className="relative rounded-xl overflow-hidden bg-zinc-900 group-hover:ring-1 group-hover:ring-red-500/40 transition-all duration-300"
+         className="relative rounded-[7px] overflow-hidden bg-zinc-900 group-hover:ring-1 group-hover:ring-red-500/40 transition-all duration-300"
         style={{ aspectRatio: "16/9" }}
       >
         {/* Backdrop image */}

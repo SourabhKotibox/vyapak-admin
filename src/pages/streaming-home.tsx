@@ -193,12 +193,12 @@ function ShortDramaCard({ drama, onClick, fullWidth }: { drama: ShortDrama; onCl
   return (
     <div
       className={`group relative flex-shrink-0 cursor-pointer ${fullWidth ? "w-full" : ""}`}
-      style={fullWidth ? {} : { width: "clamp(160px, 20vw, 200px)" }}
+      style={fullWidth ? {} : { width: "clamp(140px, 18vw, 180px)" }}
       onClick={onClick}
     >
       <div
-         className="relative overflow-hidden rounded-xl bg-zinc-900 transition-all duration-300 group-hover:ring-2 group-hover:ring-purple-500/60 group-hover:scale-[1.03] shadow-lg"
-        style={{ aspectRatio: "9/16" }}
+         className="relative overflow-hidden rounded-[7px] bg-zinc-900 transition-all duration-300 group-hover:ring-2 group-hover:ring-purple-500/60 group-hover:scale-[1.03] shadow-lg"
+        style={{ aspectRatio: "3/4" }}
       >
         <img
           src={getImageUrl(drama.poster || drama.posterImage || drama.thumbnail || drama.backdrop || drama.bannerImage) || ""}
@@ -511,7 +511,7 @@ function SubscribeBanner({ onSubscribeClick }: { onSubscribeClick: () => void })
   };
 
   return (
-    <div className="mx-4 sm:mx-8 lg:mx-12 mb-10 rounded-xl overflow-hidden relative">
+    <div className="mx-4 sm:mx-8 lg:mx-12 mb-10 rounded-[7px] overflow-hidden relative">
       <div className="absolute inset-0" style={{ background: "linear-gradient(135deg, #0a1628 0%, #0f2044 50%, #091830 100%)" }} />
       <div className="absolute inset-0 bg-gradient-to-r from-[#0a1628]/95 via-[#0a1628]/70 to-transparent" />
 
@@ -591,7 +591,7 @@ function NewHotTab({ onPlay }: { onPlay: (item: ContentItem) => void }) {
           return (
             <div
               key={item.id || item._id || ""}
-              className="group relative rounded-2xl overflow-hidden bg-gradient-to-b from-zinc-900/60 to-zinc-900/40 border border-zinc-800/30 hover:border-zinc-700/50 hover:shadow-2xl hover:shadow-black/40 transition-all duration-300 cursor-pointer"
+              className="group relative rounded-[7px] overflow-hidden bg-gradient-to-b from-zinc-900/60 to-zinc-900/40 border border-zinc-800/30 hover:border-zinc-700/50 hover:shadow-2xl hover:shadow-black/40 transition-all duration-300 cursor-pointer"
               onClick={() => onPlay(item)}
             >
               {/* CardHeader — badge centered */}
@@ -608,7 +608,7 @@ function NewHotTab({ onPlay }: { onPlay: (item: ContentItem) => void }) {
 
               {/* CardMedia */}
               <div className="relative px-4 mb-4">
-                <div className="relative aspect-[16/9] rounded-xl overflow-hidden bg-zinc-900 group-hover:scale-[1.02] transition-transform duration-500">
+                <div className="relative aspect-[16/9] rounded-[7px] overflow-hidden bg-zinc-900 group-hover:scale-[1.02] transition-transform duration-500">
                   <img
                     src={getImageUrl(item.backdrop || item.poster)}
                     alt={item.title}
@@ -792,11 +792,11 @@ function HomeTab({ onPlay, onSelectDrama, onSubscribeClick, isSubscribed }: {
             {cw.map((item: any) => (
               <div
                 key={item.id}
-                className="group relative flex-shrink-0 w-[260px] sm:w-[300px] cursor-pointer"
+                className="group relative flex-shrink-0 w-[190px] sm:w-[220px] cursor-pointer"
                 onClick={() => onPlay(item)}
               >
                 {/* Card */}
-                 <div className="relative rounded-xl overflow-hidden bg-zinc-900 shadow-lg" style={{ aspectRatio: "16/9" }}>
+                 <div className="relative rounded-[7px] overflow-hidden bg-zinc-900 shadow-lg" style={{ aspectRatio: "16/9" }}>
                   <img
                     src={getImageUrl(item.backdrop || item.poster || item.posterImage || item.thumbnail) || ""}
                     alt={item.title || ""}

@@ -80,7 +80,7 @@ export default function EpisodeForm() {
   // Episode Details
   const [thumbnailUrl, setThumbnailUrl] = useState("");
   const [showId, setShowId] = useState("");
-  const [seasonNumber, setSeasonNumber] = useState("1");
+  const [seasonNumber, setSeasonNumber] = useState("");
   const [episodeNumber, setEpisodeNumber] = useState("1");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -110,8 +110,15 @@ export default function EpisodeForm() {
   const isShortDramaRoute = location.includes("short-drama");
 
   // API
-  const { data: showsData, isLoading: loadingShows } = useGetContentList({ contentType: isShortDramaRoute ? "drama" : "series", limit: 200 });
-  const { data: seasonsData } = useGetSeasonList(showId ? { contentId: showId } : {});
+  const { data: showsData, isLoading: loadingShows } = useGetContentList({
+    type: "series",
+    ...(isShortDramaRoute ? { contentType: "drama" } : {}),
+    limit: 100,
+  });
+  const { data: seasonsData, isLoading: loadingSeasons } = useGetSeasonList(
+    showId ? { contentId: showId } : {},
+    { enabled: !!showId }
+  );
   const { data: existingEpisode, isLoading: loadingEpisode } = useGetEpisodeById(isEdit ? id : "");
   const { data: languagesData } = useGetLanguagesList();
   const languagesList = (languagesData as any)?.data || [];
@@ -119,7 +126,43 @@ export default function EpisodeForm() {
   const updateMutation = useUpdateEpisode();
 
   const tvShows: any[] = showsData?.data || [];
-  const availableSeasons: any[] = seasonsData?.data || [];
+  const selectedShow = tvShows.find((s) => getId(s) === showId);
+
+  // Compute unique seasons for the selected TV show
+  const seasonList = (() => {
+    if (!showId) return [];
+
+    const existingSeasonNumbers = (seasonsData?.data || [])
+      .map((s: any) => Number(s.season))
+      .filter((n: number) => Number.isInteger(n) && n > 0);
+
+    const configuredCount = Number(selectedShow?.seasons) || 1;
+    const configuredSeasonNumbers = Array.from(
+      { length: Math.max(configuredCount, 1) },
+      (_, i) => i + 1
+    );
+
+    const uniqueSeasonNumbers = Array.from(
+      new Set([...existingSeasonNumbers, ...configuredSeasonNumbers])
+    ).sort((a, b) => a - b);
+
+    return uniqueSeasonNumbers.map((num) => ({
+      id: `${showId}-${num}`,
+      number: num,
+      name: `Season ${num}`,
+    }));
+  })();
+
+  const handleShowChange = (newShowId: string) => {
+    setShowId(newShowId);
+    setSeasonNumber("");
+  };
+
+  useEffect(() => {
+    if (showId && seasonList.length > 0 && !seasonNumber) {
+      setSeasonNumber(String(seasonList[0].number));
+    }
+  }, [showId, seasonList, seasonNumber]);
 
   const handleVideoSelect = (media: any) => {
     setVideoFilePath(media.filePath);
@@ -242,19 +285,19 @@ export default function EpisodeForm() {
         );
       }
 
-       if (e.hlsUrl) {
-         const isHttp = e.hlsUrl.startsWith("http://") || e.hlsUrl.startsWith("https://");
-         if (e.hlsUrl.endsWith(".m3u8") && isHttp) {
-           setVideoUploadType("hls");
-           setVideoUrl(e.hlsUrl);
-         } else {
-           setVideoUploadType("local");
-           setVideoFilePath(e.hlsUrl);
-         }
-       } else if (e.sourceVideoUrl) {
-        setVideoUploadType("url");
-        setVideoUrl(e.sourceVideoUrl);
-      }
+       const savedType = e.videoUploadType || (e.sourceVideoUrl ? "url" : (e.hlsUrl ? (e.hlsUrl.endsWith(".m3u8") && (e.hlsUrl.startsWith("http://") || e.hlsUrl.startsWith("https://")) ? "hls" : "local") : "url"));
+       setVideoUploadType(savedType);
+
+       if (savedType === "local") {
+         setVideoFilePath(e.hlsUrl || e.videoUrl || "");
+         setVideoUrl("");
+       } else if (savedType === "hls") {
+         setVideoUrl(e.hlsUrl || e.videoUrl || "");
+         setVideoFilePath("");
+       } else {
+         setVideoUrl(e.sourceVideoUrl || e.videoUrl || "");
+         setVideoFilePath("");
+       }
 
       if (Array.isArray(e.videoQualities) && e.videoQualities.length > 0) {
         setQualityEnabled(true);
@@ -298,8 +341,9 @@ export default function EpisodeForm() {
       title: name,
       description: description || undefined,
       thumbnail: thumbnailUrl || undefined,
-      sourceVideoUrl: videoUploadType === "url" ? videoUrl : undefined,
-      hlsUrl: videoUploadType === "local" ? videoFilePath : (videoUploadType === "hls" ? videoUrl : undefined),
+      videoUploadType,
+      sourceVideoUrl: videoUploadType === "url" ? videoUrl : "",
+      hlsUrl: videoUploadType === "local" ? videoFilePath : (videoUploadType === "hls" ? videoUrl : ""),
       trailerUrl: trailerUrl || undefined,
       isFree,
       isLocked: !isFree && isLocked,
@@ -330,6 +374,9 @@ export default function EpisodeForm() {
       }
       queryClient.invalidateQueries({ queryKey: ["episode-list"] });
       queryClient.invalidateQueries({ queryKey: ["season-list"] });
+      queryClient.invalidateQueries({ queryKey: ["episode", id] });
+      queryClient.invalidateQueries({ queryKey: ["web-detail"] });
+      queryClient.invalidateQueries({ queryKey: ["content"] });
       toast({ title: isEdit ? "Episode updated!" : "Episode created!" });
       setLocation("/episodes");
     } catch (error: any) {
@@ -449,15 +496,22 @@ export default function EpisodeForm() {
                 <Label className="text-foreground text-sm font-medium">
                   TV Show <span className="text-primary">*</span>
                 </Label>
-                <Select value={showId} onValueChange={setShowId} disabled={loadingShows}>
+                <Select value={showId} onValueChange={handleShowChange} disabled={loadingShows}>
                   <SelectTrigger className="bg-muted border-border text-foreground h-10 rounded-lg text-sm">
                     <SelectValue placeholder={loadingShows ? "Loading…" : "Select TV Show"} />
                   </SelectTrigger>
-                  <SelectContent className="bg-popover border-border text-foreground">
-                    {tvShows.length === 0
-                      ? <SelectItem value="_none" disabled>No TV shows found</SelectItem>
-                      : tvShows.map((s) => <SelectItem key={s._id} value={s._id}>{s.title}</SelectItem>)
-                    }
+                  <SelectContent className="bg-popover border-border text-foreground max-h-60">
+                    {loadingShows ? (
+                      <SelectItem value="_loading" disabled>Loading TV shows...</SelectItem>
+                    ) : tvShows.length === 0 ? (
+                      <SelectItem value="_none" disabled>No TV shows found</SelectItem>
+                    ) : (
+                      tvShows.map((s) => (
+                        <SelectItem key={getId(s)} value={getId(s)}>
+                          {s.title}
+                        </SelectItem>
+                      ))
+                    )}
                   </SelectContent>
                 </Select>
               </div>
@@ -466,19 +520,36 @@ export default function EpisodeForm() {
                 <Label className="text-foreground text-sm font-medium">
                   Season <span className="text-primary">*</span>
                 </Label>
-                <Select value={seasonNumber} onValueChange={setSeasonNumber}>
+                <Select
+                  value={seasonNumber}
+                  onValueChange={setSeasonNumber}
+                  disabled={!showId || loadingSeasons}
+                >
                   <SelectTrigger className="bg-muted border-border text-foreground h-10 rounded-lg text-sm">
-                    <SelectValue placeholder="Season" />
+                    <SelectValue
+                      placeholder={
+                        !showId
+                          ? "Select TV Show first"
+                          : loadingSeasons
+                          ? "Loading seasons..."
+                          : "Select Season"
+                      }
+                    />
                   </SelectTrigger>
-                  <SelectContent className="bg-popover border-border text-foreground">
-                    {availableSeasons.length > 0
-                      ? availableSeasons.map((s: any) => (
-                          <SelectItem key={s.seasonId} value={String(s.season)}>Season {s.season}</SelectItem>
-                        ))
-                      : [1, 2, 3, 4, 5].map((n) => (
-                          <SelectItem key={n} value={String(n)}>Season {n}</SelectItem>
-                        ))
-                    }
+                  <SelectContent className="bg-popover border-border text-foreground max-h-60">
+                    {!showId ? (
+                      <SelectItem value="_no_show" disabled>Select TV Show first</SelectItem>
+                    ) : loadingSeasons ? (
+                      <SelectItem value="_loading_seasons" disabled>Loading seasons...</SelectItem>
+                    ) : seasonList.length === 0 ? (
+                      <SelectItem value="_no_seasons" disabled>No seasons found</SelectItem>
+                    ) : (
+                      seasonList.map((s) => (
+                        <SelectItem key={s.id} value={String(s.number)}>
+                          {s.name}
+                        </SelectItem>
+                      ))
+                    )}
                   </SelectContent>
                 </Select>
               </div>

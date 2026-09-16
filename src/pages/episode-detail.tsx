@@ -61,6 +61,13 @@ function fmtTime(s: number): string {
   return `${m.toString().padStart(2, "0")}:${sec.toString().padStart(2, "0")}`;
 }
 
+function getYouTubeVideoId(url?: string): string | null {
+  if (!url) return null;
+  const trimmed = url.trim();
+  const match = trimmed.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/);
+  return match ? match[1] : null;
+}
+
 /* ─────────────────────────────────────────────────────────────
    VIDEO PLAYER COMPONENT
    Props:
@@ -108,11 +115,13 @@ function VideoPlayer({
   const [skipAnim,       setSkipAnim]       = useState<"left"|"right"|null>(null);
 
   // Quality & Speed Settings state
-  const [currentSrc,     setCurrentSrc]     = useState(() => videoSrc ? getImageUrl(videoSrc) : "");
+  const [currentSrc,     setCurrentSrc]     = useState(() => videoSrc ? (getYouTubeVideoId(videoSrc) ? videoSrc : getImageUrl(videoSrc)) : "");
   const [currentQuality, setCurrentQuality] = useState("auto");
   const [speed,          setSpeed]          = useState(1.0);
   const [settingsOpen,   setSettingsOpen]   = useState(false);
   const [currentMenu,    setCurrentMenu]    = useState<"main" | "quality" | "speed">("main");
+
+  const ytId = getYouTubeVideoId(currentSrc || videoSrc);
 
   const saveProgressMutation = useSaveWatchProgress();
   const lastSavedTimeRef = useRef(0);
@@ -171,7 +180,8 @@ function VideoPlayer({
 
   // Sync parent videoSrc
   useEffect(() => {
-    setCurrentSrc(videoSrc ? getImageUrl(videoSrc) : "");
+    const raw = videoSrc || "";
+    setCurrentSrc(raw ? (getYouTubeVideoId(raw) ? raw : getImageUrl(raw)) : "");
     setCurrentQuality("auto");
     setSpeed(1.0);
     setSettingsOpen(false);
@@ -286,6 +296,7 @@ function VideoPlayer({
     };
     const onWaiting    = () => setLoading(true);
     const onCanPlay    = () => setLoading(false);
+    const onError      = () => setLoading(false);
 
     v.addEventListener("play",           onPlay);
     v.addEventListener("pause",          onPause);
@@ -293,10 +304,12 @@ function VideoPlayer({
     v.addEventListener("timeupdate",     onTimeUpdate);
     v.addEventListener("durationchange", onDuration);
     v.addEventListener("loadedmetadata", onDuration);
+    v.addEventListener("loadeddata",     onCanPlay);
     v.addEventListener("progress",       onProgress);
     v.addEventListener("waiting",        onWaiting);
     v.addEventListener("canplay",        onCanPlay);
     v.addEventListener("playing",        onCanPlay);
+    v.addEventListener("error",          onError);
 
     return () => {
       v.removeEventListener("play",           onPlay);
@@ -305,10 +318,12 @@ function VideoPlayer({
       v.removeEventListener("timeupdate",     onTimeUpdate);
       v.removeEventListener("durationchange", onDuration);
       v.removeEventListener("loadedmetadata", onDuration);
+      v.removeEventListener("loadeddata",     onCanPlay);
       v.removeEventListener("progress",       onProgress);
       v.removeEventListener("waiting",        onWaiting);
       v.removeEventListener("canplay",        onCanPlay);
       v.removeEventListener("playing",        onCanPlay);
+      v.removeEventListener("error",          onError);
     };
   }, [scheduleHide, onNext]);
 
@@ -335,6 +350,10 @@ function VideoPlayer({
   // Load source with HLS support
   useEffect(() => {
     const v = videoRef.current;
+    if (ytId) {
+      setLoading(false);
+      return;
+    }
     if (!v) return;
 
     let hls: Hls | null = null;
@@ -371,6 +390,9 @@ function VideoPlayer({
         hls.loadSource(activeSrc);
         hls.attachMedia(v);
         hls.on(Hls.Events.MANIFEST_PARSED, onManifestParsed);
+        hls.on(Hls.Events.ERROR, (_event, data) => {
+          if (data.fatal) setLoading(false);
+        });
       } else {
         v.src = activeSrc;
         v.load();
@@ -389,6 +411,7 @@ function VideoPlayer({
           v.removeEventListener('canplay', onCanPlay);
         };
         v.addEventListener('canplay', onCanPlay);
+        v.addEventListener('error', () => setLoading(false));
       }
     };
 
@@ -399,7 +422,7 @@ function VideoPlayer({
         hls.destroy();
       }
     };
-  }, [currentSrc, autoPlay, contentId, episodeId]);
+  }, [currentSrc, autoPlay, contentId, episodeId, ytId]);
 
   // Apply playback speed rate
   useEffect(() => {
@@ -507,43 +530,55 @@ function VideoPlayer({
       }}
       onTouchStart={revealControls}
     >
-      {/* Real video element */}
-      <video
-        ref={videoRef}
-        poster={thumbnail}
-        className="absolute inset-0 w-full h-full object-contain"
-        preload="metadata"
-        playsInline
-        onClick={togglePlay}
-        style={{ outline: "none" }}
-        onLoadedMetadata={() => {
-          const v = videoRef.current;
-          if (!v) return;
-          if (isFinite(v.duration)) setDuration(v.duration);
-          if (pendingSeekRef.current !== null) {
-            v.currentTime = pendingSeekRef.current;
-            pendingSeekRef.current = null;
-          }
-          v.playbackRate = speed;
-          const shouldPlay = playing || autoPlay;
-          if (shouldPlay) {
-            v.play().catch(() => {});
-          }
-        }}
-      />
+      {/* Real video element / YouTube iframe */}
+      {ytId ? (
+        <iframe
+          src={`https://www.youtube.com/embed/${ytId}?autoplay=${autoPlay ? 1 : 0}&enablejsapi=1&rel=0`}
+          title="Video Player"
+          className="absolute inset-0 w-full h-full border-0 z-10"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+          allowFullScreen
+        />
+      ) : (
+        <video
+          ref={videoRef}
+          poster={thumbnail}
+          className="absolute inset-0 w-full h-full object-contain"
+          preload="metadata"
+          playsInline
+          onClick={togglePlay}
+          style={{ outline: "none" }}
+          onLoadedMetadata={() => {
+            const v = videoRef.current;
+            if (!v) return;
+            if (isFinite(v.duration)) setDuration(v.duration);
+            if (pendingSeekRef.current !== null) {
+              v.currentTime = pendingSeekRef.current;
+              pendingSeekRef.current = null;
+            }
+            v.playbackRate = speed;
+            const shouldPlay = playing || autoPlay;
+            if (shouldPlay) {
+              v.play().catch(() => {});
+            }
+          }}
+        />
+      )}
 
       {/* Gradient */}
-      <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-black/25 pointer-events-none z-10" />
+      {!ytId && (
+        <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-black/25 pointer-events-none z-10" />
+      )}
 
       {/* Buffering spinner */}
-      {loading && (
+      {loading && !ytId && (
         <div className="absolute inset-0 flex items-center justify-center z-20 pointer-events-none">
           <Loader2 className="w-10 h-10 text-red-500 animate-spin" />
         </div>
       )}
 
       {/* Skip flash */}
-      {skipAnim && (
+      {skipAnim && !ytId && (
         <div
           className={`absolute inset-y-0 flex items-center justify-center pointer-events-none z-20
             ${skipAnim === "right" ? "left-auto right-[15%]" : "left-[15%] right-auto"}`}
@@ -560,49 +595,52 @@ function VideoPlayer({
       )}
 
       {/* Center play/pause controls overlay */}
-      <div
-        className={`absolute inset-0 flex items-center justify-center z-20 transition-opacity duration-300 pointer-events-none ${
-          ctrlShow ? "opacity-100" : "opacity-0"
-        }`}
-      >
-        <div className="flex items-center gap-6 pointer-events-auto">
-          {/* Skip back */}
-          <button
-            onClick={(e) => { e.stopPropagation(); skip(-10); }}
-            className="w-11 h-11 rounded-full bg-black/40 border border-white/10 flex items-center justify-center hover:bg-black/60 transition-all duration-200 active:scale-90"
-          >
-            <RotateCcw className="w-4 h-4 text-foreground" />
-          </button>
+      {!ytId && (
+        <div
+          className={`absolute inset-0 flex items-center justify-center z-20 transition-opacity duration-300 pointer-events-none ${
+            ctrlShow ? "opacity-100" : "opacity-0"
+          }`}
+        >
+          <div className="flex items-center gap-6 pointer-events-auto">
+            {/* Skip back */}
+            <button
+              onClick={(e) => { e.stopPropagation(); skip(-10); }}
+              className="w-11 h-11 rounded-full bg-black/40 border border-white/10 flex items-center justify-center hover:bg-black/60 transition-all duration-200 active:scale-90"
+            >
+              <RotateCcw className="w-4 h-4 text-foreground" />
+            </button>
 
-          {/* Play/Pause */}
-          <button
-            onClick={(e) => { e.stopPropagation(); togglePlay(); }}
-            className={`w-16 h-16 rounded-full bg-red-600 hover:bg-red-500 flex items-center justify-center shadow-lg hover:scale-105 transition-all duration-200 active:scale-95 ${
-              loading ? "opacity-0 pointer-events-none scale-90" : "opacity-100"
-            }`}
-          >
-            {playing
-              ? <Pause className="w-6 h-6 text-foreground fill-white" />
-              : <Play  className="w-6 h-6 text-foreground fill-white ml-1" />
-            }
-          </button>
+            {/* Play/Pause */}
+            <button
+              onClick={(e) => { e.stopPropagation(); togglePlay(); }}
+              className={`w-16 h-16 rounded-full bg-red-600 hover:bg-red-500 flex items-center justify-center shadow-lg hover:scale-105 transition-all duration-200 active:scale-95 ${
+                loading ? "opacity-0 pointer-events-none scale-90" : "opacity-100"
+              }`}
+            >
+              {playing
+                ? <Pause className="w-6 h-6 text-foreground fill-white" />
+                : <Play  className="w-6 h-6 text-foreground fill-white ml-1" />
+              }
+            </button>
 
-          {/* Skip forward */}
-          <button
-            onClick={(e) => { e.stopPropagation(); skip(10); }}
-            className="w-11 h-11 rounded-full bg-black/40 border border-white/10 flex items-center justify-center hover:bg-black/60 transition-all duration-200 active:scale-90"
-          >
-            <RotateCw className="w-4 h-4 text-foreground" />
-          </button>
+            {/* Skip forward */}
+            <button
+              onClick={(e) => { e.stopPropagation(); skip(10); }}
+              className="w-11 h-11 rounded-full bg-black/40 border border-white/10 flex items-center justify-center hover:bg-black/60 transition-all duration-200 active:scale-90"
+            >
+              <RotateCw className="w-4 h-4 text-foreground" />
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Bottom controls */}
-      <div
-        className={`absolute bottom-0 left-0 right-0 z-20 transition-opacity duration-300 bg-gradient-to-t from-black/90 to-transparent pb-3 pt-6 ${
-          ctrlShow ? "opacity-100" : "opacity-0 pointer-events-none"
-        }`}
-      >
+      {!ytId && (
+        <div
+          className={`absolute bottom-0 left-0 right-0 z-20 transition-opacity duration-300 bg-gradient-to-t from-black/90 to-transparent pb-3 pt-6 ${
+            ctrlShow ? "opacity-100" : "opacity-0 pointer-events-none"
+          }`}
+        >
         {/* Seek bar */}
         <div className="px-3">
           <div className="relative h-4 flex items-center group/seek cursor-pointer" onClick={(e) => e.stopPropagation()}>
@@ -783,6 +821,7 @@ function VideoPlayer({
           </div>
         </div>
       </div>
+      )}
 
       <style>{`
         @keyframes skip-pop {
@@ -1156,12 +1195,19 @@ export default function EpisodeDetailPage() {
   const [lockPopupOpen, setLockPopupOpen] = useState(false);
   const [lockedEpNum,   setLockedEpNum]   = useState(0);
 
+  useEffect(() => {
+    const routeEp = parseInt(params.epNum || "1", 10);
+    if (!isNaN(routeEp) && routeEp !== currentEp) {
+      setCurrentEp(routeEp);
+    }
+  }, [params.epNum]);
+
   const [selectedSeason, setSelectedSeason] = useState(1);
   const [seasonDropdownOpen, setSeasonDropdownOpen] = useState(false);
 
   const currentEpisode = (() => {
     if (currentEp === 0) return null;
-    return apiEpisodes[currentEp - 1] || apiEpisodes[0];
+    return apiEpisodes.find((e: any) => Number(e.episode || e.episodeNumber || e.number) === Number(currentEp)) || null;
   })();
 
   useEffect(() => {
@@ -1301,13 +1347,15 @@ export default function EpisodeDetailPage() {
   const isLockedForContent = getPlanLevel(userPlan) < getPlanLevel(requiredPlan);
 
   const goToEpisode = useCallback((ep: number) => {
-    const maxEp = detail.totalEpisodes === 0 ? 1 : detail.totalEpisodes;
-    if (ep < 0 || ep > maxEp) return;
-    const targetEp = apiEpisodes[ep - 1];
+    if (ep < 0) return;
+    const targetEp = apiEpisodes.find((e: any) => Number(e.episode || e.episodeNumber || e.number) === Number(ep));
+    
+    // If not trailer (0) and episodes exist but target not found, return
+    if (ep !== 0 && apiEpisodes.length > 0 && !targetEp) return;
     
     let isLocked = false;
     if (ep !== 0) {
-      if (detail.totalEpisodes === 0) {
+      if (apiEpisodes.length === 0) {
         isLocked = (showData?.isPremium === true || requiredPlan !== "free") && isLockedForContent;
       } else {
         const isEpFree = targetEp ? targetEp.isFree : ep <= detail.freeEpisodes;
@@ -1323,16 +1371,20 @@ export default function EpisodeDetailPage() {
     setCurrentEp(ep);
     setAutoPlay(true);
     navigate(`/show/${contentId}/episode/${ep}`);
-  }, [contentId, detail.totalEpisodes, detail.freeEpisodes, navigate, isLockedForContent, requiredPlan, apiEpisodes, showData]);
+  }, [contentId, detail.freeEpisodes, navigate, isLockedForContent, requiredPlan, apiEpisodes, showData]);
 
   const handleNext = useCallback(() => {
-    const next = currentEp + 1;
-    // Use actual episode array length, not detail.totalEpisodes which may be 0 when loading
-    const maxEp = apiEpisodes.length > 0 ? apiEpisodes.length : detail.totalEpisodes;
-    if (next <= maxEp) {
-      goToEpisode(next);
+    if (apiEpisodes.length > 0) {
+      const currentIdx = apiEpisodes.findIndex((e: any) => Number(e.episode || e.episodeNumber || e.number) === Number(currentEp));
+      if (currentIdx >= 0 && currentIdx + 1 < apiEpisodes.length) {
+        const nextEpObj = apiEpisodes[currentIdx + 1];
+        const nextEpNum = Number(nextEpObj.episode || nextEpObj.episodeNumber || nextEpObj.number);
+        goToEpisode(nextEpNum);
+      }
+    } else {
+      goToEpisode(currentEp + 1);
     }
-  }, [currentEp, apiEpisodes.length, detail.totalEpisodes, goToEpisode]);
+  }, [currentEp, apiEpisodes, goToEpisode]);
 
   const handleLocked = useCallback((ep: number) => {
     setLockedEpNum(ep);
@@ -1349,12 +1401,18 @@ export default function EpisodeDetailPage() {
     // Movie: no episodes → play the movie's own HLS/video URL
     if (apiEpisodes.length === 0) {
       if (currentEp === 0 && showData?.trailerUrl) return showData.trailerUrl;
-      return showData?.hlsUrl || showData?.videoUrl || showData?.sourceVideoUrl || "";
+      return showData?.hlsUrl || showData?.sourceVideoUrl || showData?.videoUrl || "";
     }
     if (currentEp === 0) return showData?.trailerUrl || showData?.hlsUrl || "";
     const ep = currentEpisode;
-    // Fall back to content-level hlsUrl when episode record doesn't exist yet
-    return ep?.sourceVideoUrl || ep?.videoUrl || ep?.hlsUrl || (currentEp === 1 ? (showData?.hlsUrl || showData?.videoUrl || "") : "");
+    if (!ep) return currentEp === 1 ? (showData?.hlsUrl || showData?.sourceVideoUrl || showData?.videoUrl || "") : "";
+    if (ep.videoUploadType === 'url') {
+      return ep.sourceVideoUrl || ep.videoUrl || "";
+    }
+    if (ep.videoUploadType === 'local' || ep.videoUploadType === 'hls') {
+      return ep.hlsUrl || ep.videoUrl || ep.sourceVideoUrl || "";
+    }
+    return ep.hlsUrl || ep.sourceVideoUrl || ep.videoUrl || "";
   })();
 
   if (isLoading) {
@@ -1393,7 +1451,7 @@ export default function EpisodeDetailPage() {
 
           {/* Player Container */}
           <div
-            key={`${title}-ep-${currentEp}`}
+            key={`${contentId || title}-ep-${currentEp}-${currentEpisode?._id || currentEpisode?.id || 'none'}`}
             className="relative overflow-hidden bg-black shadow-2xl rounded-2xl border border-zinc-900 mb-8"
             style={{ aspectRatio: "16 / 9" }}
             onClick={() => !playerStarted && setPlayerStarted(true)}
@@ -1617,17 +1675,19 @@ export default function EpisodeDetailPage() {
                 {/* Episodes grid */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {apiEpisodes
-                    .map((ep, idx) => ({ ...ep, globalIndex: idx + 1 }))
                     .filter((ep) => (ep.season || 1) === selectedSeason)
                     .map((ep) => {
-                      const isActive = ep.globalIndex === currentEp;
+                      const epNum = Number(ep.episode || ep.episodeNumber || ep.number);
+                      const isActive = epNum === currentEp;
                       const isLocked = !ep.isFree && isLockedForContent;
-                      const isEpDownloaded = profileData?.downloads?.some((d: any) => d.episodeId === (ep.id || ep._id));
+                      const isEpDownloaded = downloadItems.some((d: any) => d.episodeId === (ep.id || ep._id));
+                      const handleClick = () => isLocked ? handleLocked(epNum) : goToEpisode(epNum);
 
                       return (
                         <div
                           key={ep.id || ep._id}
-                          className={`flex gap-4 p-3 rounded-xl border transition-all duration-300 group/ep ${
+                          onClick={handleClick}
+                          className={`flex gap-4 p-3 rounded-xl border transition-all duration-300 group/ep cursor-pointer ${
                             isActive
                               ? "bg-red-500/5 border-red-500/40"
                               : "bg-zinc-950/40 border-zinc-800/80 hover:bg-zinc-900/80 hover:border-zinc-700"
@@ -1635,8 +1695,7 @@ export default function EpisodeDetailPage() {
                         >
                           {/* Left: Thumbnail */}
                           <div
-                            onClick={() => isLocked ? handleLocked(ep.globalIndex) : goToEpisode(ep.globalIndex)}
-                            className="relative w-28 sm:w-36 aspect-video rounded-lg overflow-hidden bg-zinc-950 flex-shrink-0 cursor-pointer"
+                            className="relative w-28 sm:w-36 aspect-video rounded-lg overflow-hidden bg-zinc-950 flex-shrink-0"
                           >
                             <img
                               src={getImageUrl(ep.thumbnail || showData?.thumbnail || "")}
@@ -1661,18 +1720,17 @@ export default function EpisodeDetailPage() {
                             <div>
                               <div className="flex items-start justify-between gap-3">
                                 <h4
-                                  onClick={() => isLocked ? handleLocked(ep.globalIndex) : goToEpisode(ep.globalIndex)}
-                                  className={`font-bold text-xs sm:text-sm cursor-pointer line-clamp-1 transition-colors ${
+                                  className={`font-bold text-xs sm:text-sm line-clamp-1 transition-colors ${
                                     isActive ? "text-red-500" : "text-foreground group-hover/ep:text-red-500"
                                   }`}
                                 >
-                                  {ep.episode || ep.episodeNumber || ep.number}. {ep.title}
+                                  {epNum}. {ep.title}
                                 </h4>
                                 {Boolean(!isLocked && currentUser && currentUser.downloadAllowed && ep.downloadAllowed !== false) && (
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      handleDownloadToggle(ep.globalIndex);
+                                      handleDownloadToggle(epNum);
                                     }}
                                     title={isEpDownloaded ? "Remove download" : "Download episode"}
                                     className={`p-1.5 rounded-full transition-all flex-shrink-0 ${

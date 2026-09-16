@@ -1412,10 +1412,11 @@ export const useGetEpisodeList = (options: any) => {
   });
 };
 
-export const useGetSeasonList = (options: any) => {
+export const useGetSeasonList = (options: any, queryOptions: any = {}) => {
   return useQuery({
     queryKey: ["season-list", options],
     queryFn: () => getSeasonList(options),
+    ...queryOptions,
   });
 };
 

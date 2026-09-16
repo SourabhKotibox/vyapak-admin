@@ -30,6 +30,13 @@ const fmtCount = (num: number) => {
   return num >= 1e6 ? (num / 1e6).toFixed(1) + 'M' : num >= 1e3 ? (num / 1e3).toFixed(1) + 'K' : num.toString();
 };
 
+const getYouTubeVideoId = (url: string): string | null => {
+  if (!url) return null;
+  const regExp = /(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/;
+  const match = url.match(regExp);
+  return match ? match[1] : null;
+};
+
 export default function ShortDramaPlayer() {
   const { id, epNum } = useParams<{ id: string; epNum: string }>();
   const [, setLocation] = useLocation();
@@ -112,7 +119,9 @@ export default function ShortDramaPlayer() {
   const show = (detailData as any)?.content || detailData;
   const apiEpisodes: any[] = (detailData as any)?.episodes || [];
 
-  const currentEpisode = currentEpNum === 0 ? null : (apiEpisodes[currentEpNum - 1] || apiEpisodes[0]);
+  const currentEpisode = currentEpNum === 0
+    ? null
+    : (apiEpisodes.find((e: any) => Number(e.episode || e.episodeNumber || e.number) === Number(currentEpNum)) || null);
   const totalEps = apiEpisodes.length;
   const freeEps = apiEpisodes.filter((e: any) => e.isFree).length;
 
@@ -122,8 +131,17 @@ export default function ShortDramaPlayer() {
 
   // Episode is locked if it's marked as locked for this specific user by the backend
   const isLocked = currentEpisode ? (currentEpisode.isLockedForUser !== undefined ? currentEpisode.isLockedForUser : !currentEpisode.isFree) : false;
-  const videoSrcRaw = isLocked ? "" : (currentEpisode?.hlsUrl || currentEpisode?.videoUrl || (currentEpNum === 0 ? (show?.trailerUrl || show?.hlsUrl || "") : ""));
-  const videoSrc = getImageUrl(videoSrcRaw);
+  const videoSrcRaw = isLocked
+    ? ""
+    : (currentEpisode
+        ? (currentEpisode.videoUploadType === 'url'
+            ? (currentEpisode.sourceVideoUrl || currentEpisode.videoUrl || "")
+            : (currentEpisode.videoUploadType === 'local' || currentEpisode.videoUploadType === 'hls'
+                ? (currentEpisode.hlsUrl || currentEpisode.videoUrl || currentEpisode.sourceVideoUrl || "")
+                : (currentEpisode.hlsUrl || currentEpisode.sourceVideoUrl || currentEpisode.videoUrl || "")))
+        : (currentEpNum === 0 ? (show?.trailerUrl || show?.hlsUrl || show?.sourceVideoUrl || "") : ""));
+  const ytId = getYouTubeVideoId(videoSrcRaw);
+  const videoSrc = ytId ? "" : getImageUrl(videoSrcRaw);
   const poster = getImageUrl(currentEpisode?.thumbnail || show?.posterImage || show?.thumbnail || "");
 
   const { data: wishlistData } = useGetWishlist({ limit: 100 });
@@ -166,6 +184,10 @@ export default function ShortDramaPlayer() {
 
   // HLS player
   useEffect(() => {
+    if (ytId) {
+      setLoading(false);
+      return;
+    }
     const v = videoRef.current;
     if (!v) return;
     let hls: Hls | null = null;
@@ -211,13 +233,14 @@ export default function ShortDramaPlayer() {
         v.removeEventListener("canplay", onCanPlay);
       };
       v.addEventListener("canplay", onCanPlay);
+      v.addEventListener("error", () => setLoading(false));
     }
 
     return () => {
       if (hls) hls.destroy();
       v.pause();
     };
-  }, [videoSrc]);
+  }, [videoSrc, ytId]);
 
   // Controls auto-hide
   const revealControls = useCallback(() => {
@@ -254,8 +277,7 @@ export default function ShortDramaPlayer() {
   };
 
   const goToEpisode = (n: number) => {
-    if (n < 0 || n > totalEps) return;
-    const ep = n === 0 ? null : apiEpisodes[n - 1];
+    if (n < 0) return;
     setCurrentEpNum(n);
     setLocation(`/drama/${id}/episode/${n}`, { replace: true });
   };
@@ -479,20 +501,31 @@ export default function ShortDramaPlayer() {
         onMouseMove={revealControls}
         onTouchStart={revealControls}
       >
-        {/* Video — key=videoSrc forces a full remount when episode changes, guaranteeing currentTime=0 */}
-        <video
-          key={videoSrc}
-          ref={videoRef}
-          poster={poster}
-          className="absolute inset-0 w-full h-full object-cover"
-          playsInline
-          onClick={togglePlay}
-          onTimeUpdate={() => { const v = videoRef.current; if (v) setCurrentTime(v.currentTime); }}
-          onDurationChange={() => { const v = videoRef.current; if (v && isFinite(v.duration)) setDuration(v.duration); }}
-          onPlay={() => setPlaying(true)}
-          onPause={() => setPlaying(false)}
-          onEnded={() => goToEpisode(currentEpNum + 1)}
-        />
+        {/* Video or YouTube iframe */}
+        {ytId ? (
+          <iframe
+            key={`yt-${ytId}`}
+            src={`https://www.youtube.com/embed/${ytId}?autoplay=1&enablejsapi=1&rel=0`}
+            title="Video Player"
+            className="absolute inset-0 w-full h-full border-0 z-10"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+            allowFullScreen
+          />
+        ) : (
+          <video
+            key={`${id}-ep-${currentEpNum}-${currentEpisode?._id || currentEpisode?.id || 'video'}`}
+            ref={videoRef}
+            poster={poster}
+            className="absolute inset-0 w-full h-full object-cover"
+            playsInline
+            onClick={togglePlay}
+            onTimeUpdate={() => { const v = videoRef.current; if (v) setCurrentTime(v.currentTime); }}
+            onDurationChange={() => { const v = videoRef.current; if (v && isFinite(v.duration)) setDuration(v.duration); }}
+            onPlay={() => setPlaying(true)}
+            onPause={() => setPlaying(false)}
+            onEnded={() => goToEpisode(currentEpNum + 1)}
+          />
+        )}
 
         {/* Locked Overlay */}
         {isLocked && (
@@ -516,7 +549,7 @@ export default function ShortDramaPlayer() {
         )}
 
         {/* Loading */}
-        {loading && !isLocked && (
+        {loading && !isLocked && !ytId && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/40 z-10">
             <Loader2 className="w-10 h-10 text-white animate-spin" />
           </div>
@@ -639,7 +672,7 @@ export default function ShortDramaPlayer() {
 
           {/* Center: play/pause icon — pointer-events only on the button itself */}
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            {!playing && !loading && (
+            {!playing && !loading && !ytId && (
               <button
                 className="w-16 h-16 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 flex items-center justify-center shadow-xl pointer-events-auto"
                 onClick={(e) => { e.stopPropagation(); togglePlay(); }}
@@ -653,29 +686,31 @@ export default function ShortDramaPlayer() {
           {/* Bottom bar */}
           <div className="bg-gradient-to-t from-black/85 via-black/40 to-transparent p-4 pointer-events-auto">
             {/* Seek bar */}
-            <div className="relative h-1 bg-white/20 rounded-full mb-3 cursor-pointer group/seek" onClick={(e) => e.stopPropagation()}>
-              <div className="h-full bg-[#E50914] rounded-full" style={{ width: `${seekPct}%` }} />
-              <div
-                className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-[#E50914] border-2 border-white opacity-0 group-hover/seek:opacity-100 transition-opacity"
-                style={{ left: `calc(${seekPct}% - 6px)` }}
-              />
-              <input
-                type="range" min={0} max={100} step={0.1} value={seekPct}
-                onChange={(e) => {
-                  const v = videoRef.current;
-                  if (v && duration) v.currentTime = (parseFloat(e.target.value) / 100) * duration;
-                }}
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                onClick={(e) => e.stopPropagation()}
-              />
-            </div>
+            {!ytId && (
+              <div className="relative h-1 bg-white/20 rounded-full mb-3 cursor-pointer group/seek" onClick={(e) => e.stopPropagation()}>
+                <div className="h-full bg-[#E50914] rounded-full" style={{ width: `${seekPct}%` }} />
+                <div
+                  className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-[#E50914] border-2 border-white opacity-0 group-hover/seek:opacity-100 transition-opacity"
+                  style={{ left: `calc(${seekPct}% - 6px)` }}
+                />
+                <input
+                  type="range" min={0} max={100} step={0.1} value={seekPct}
+                  onChange={(e) => {
+                    const v = videoRef.current;
+                    if (v && duration) v.currentTime = (parseFloat(e.target.value) / 100) * duration;
+                  }}
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  onClick={(e) => e.stopPropagation()}
+                />
+              </div>
+            )}
 
             {/* Bottom controls row */}
             <div className="flex items-center justify-between text-white text-xs">
               {/* Left: Time and Episode index */}
               <div className="flex items-center gap-2">
-                <span className="font-mono text-white/80">{fmtTime(currentTime)} / {fmtTime(duration)}</span>
-                <span className="text-white/65">|</span>
+                {!ytId && <span className="font-mono text-white/80">{fmtTime(currentTime)} / {fmtTime(duration)}</span>}
+                {!ytId && <span className="text-white/65">|</span>}
                 <span className="font-bold text-white/75">EP {currentEpNum}/{totalEps}</span>
               </div>
 
@@ -717,7 +752,7 @@ export default function ShortDramaPlayer() {
             </div>
             <div className="p-3 space-y-2">
               {apiEpisodes.map((ep: any, i: number) => {
-                const n = ep.episode || i + 1;
+                const n = Number(ep.episode || ep.episodeNumber || ep.number || (i + 1));
                 const locked = ep.isLockedForUser !== undefined ? ep.isLockedForUser : !ep.isFree;
                 const isCurrent = n === currentEpNum;
                 return (
@@ -767,7 +802,7 @@ export default function ShortDramaPlayer() {
           <p className="text-white/80 text-xs font-extrabold uppercase tracking-wider mb-2 border-b border-zinc-900 pb-2.5">Episodes</p>
           <div className="space-y-2">
             {apiEpisodes.map((ep: any, i: number) => {
-              const n = ep.episode || i + 1;
+              const n = Number(ep.episode || ep.episodeNumber || ep.number || (i + 1));
               const locked = ep.isLockedForUser !== undefined ? ep.isLockedForUser : !ep.isFree;
               const isCurrent = n === currentEpNum;
               const isEpDownloaded = profileData?.downloads?.some((d: any) => d.episodeId === (ep._id || ep.id));

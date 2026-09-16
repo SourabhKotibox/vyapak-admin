@@ -243,7 +243,7 @@ export default function TVShowDetailPage() {
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {seasonEpisodes.map((ep: any, idx: number) => {
-                const epNum = ep.episode || idx + 1;
+                const epNum = Number(ep.episode || ep.episodeNumber || ep.number || (idx + 1));
                 const epThumb = getImageUrl(ep.thumbnail || show?.thumbnail || "");
                 const isLocked = ep.isLocked && !ep.isFree && !isSubscribed;
                 return (

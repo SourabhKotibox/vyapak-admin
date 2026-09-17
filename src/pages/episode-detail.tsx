@@ -116,6 +116,11 @@ function VideoPlayer({
   const [settingsOpen,   setSettingsOpen]   = useState(false);
   const [currentMenu,    setCurrentMenu]    = useState<"main" | "quality" | "speed">("main");
 
+  useEffect(() => {
+    setCurrentSrc(videoSrc || "");
+    setCurrentQuality("auto");
+  }, [videoSrc]);
+
   const resolvedSource: ResolvedVideoSource = resolveVideoSource(currentSrc || videoSrc);
   const isEmbed = resolvedSource.isEmbed;
   const isEmbedOrUnsupported = isEmbed || resolvedSource.type === 'unsupported';

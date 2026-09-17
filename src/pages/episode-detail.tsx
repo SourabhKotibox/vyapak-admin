@@ -48,6 +48,8 @@ function AdOverlay({ ad, onSkip }: { ad: any; onSkip: () => void }) {
   );
 }
 
+import { resolveVideoSource, ResolvedVideoSource } from "@/lib/videoSourceResolver";
+
 function fmtCount(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
@@ -59,13 +61,6 @@ function fmtTime(s: number): string {
   const m = Math.floor(s / 60);
   const sec = Math.floor(s % 60);
   return `${m.toString().padStart(2, "0")}:${sec.toString().padStart(2, "0")}`;
-}
-
-function getYouTubeVideoId(url?: string): string | null {
-  if (!url) return null;
-  const trimmed = url.trim();
-  const match = trimmed.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/);
-  return match ? match[1] : null;
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -115,13 +110,15 @@ function VideoPlayer({
   const [skipAnim,       setSkipAnim]       = useState<"left"|"right"|null>(null);
 
   // Quality & Speed Settings state
-  const [currentSrc,     setCurrentSrc]     = useState(() => videoSrc ? (getYouTubeVideoId(videoSrc) ? videoSrc : getImageUrl(videoSrc)) : "");
+  const [currentSrc,     setCurrentSrc]     = useState(videoSrc || "");
   const [currentQuality, setCurrentQuality] = useState("auto");
   const [speed,          setSpeed]          = useState(1.0);
   const [settingsOpen,   setSettingsOpen]   = useState(false);
   const [currentMenu,    setCurrentMenu]    = useState<"main" | "quality" | "speed">("main");
 
-  const ytId = getYouTubeVideoId(currentSrc || videoSrc);
+  const resolvedSource: ResolvedVideoSource = resolveVideoSource(currentSrc || videoSrc);
+  const isEmbed = resolvedSource.isEmbed;
+  const isEmbedOrUnsupported = isEmbed || resolvedSource.type === 'unsupported';
 
   const saveProgressMutation = useSaveWatchProgress();
   const lastSavedTimeRef = useRef(0);
@@ -180,8 +177,7 @@ function VideoPlayer({
 
   // Sync parent videoSrc
   useEffect(() => {
-    const raw = videoSrc || "";
-    setCurrentSrc(raw ? (getYouTubeVideoId(raw) ? raw : getImageUrl(raw)) : "");
+    setCurrentSrc(videoSrc || "");
     setCurrentQuality("auto");
     setSpeed(1.0);
     setSettingsOpen(false);
@@ -347,11 +343,16 @@ function VideoPlayer({
     return () => window.removeEventListener('force-play-fullscreen', handleForcePlay);
   }, []);
 
-  // Load source with HLS support
+  // Load source with HLS / HTML5 support
   useEffect(() => {
     const v = videoRef.current;
-    if (ytId) {
+    if (isEmbed) {
       setLoading(false);
+      return;
+    }
+    if (resolvedSource.type === 'unsupported' || resolvedSource.type === 'empty') {
+      setLoading(false);
+      if (v) v.src = "";
       return;
     }
     if (!v) return;
@@ -362,7 +363,9 @@ function VideoPlayer({
     const loadSource = async () => {
       // Check offline cache first!
       const offlineUrl = await getOfflineVideoUrl(contentId || "", episodeId);
-      const activeSrc = offlineUrl || getImageUrl(currentSrc);
+      const rawSrc = resolvedSource.playbackUrl || currentSrc;
+      const isHttp = rawSrc.startsWith("http://") || rawSrc.startsWith("https://");
+      const activeSrc = offlineUrl || (isHttp ? rawSrc : getImageUrl(rawSrc));
 
       if (!activeSrc) {
         setLoading(false);
@@ -370,7 +373,7 @@ function VideoPlayer({
       }
 
       // Local blobs are MP4, not HLS
-      const isM3u8 = activeSrc.includes('.m3u8') && !offlineUrl;
+      const isM3u8 = (resolvedSource.type === 'hls' || activeSrc.includes('.m3u8')) && !offlineUrl;
       const onManifestParsed = () => {
         setLoading(false);
         if (pendingSeekRef.current !== null) {
@@ -422,7 +425,7 @@ function VideoPlayer({
         hls.destroy();
       }
     };
-  }, [currentSrc, autoPlay, contentId, episodeId, ytId]);
+  }, [currentSrc, autoPlay, contentId, episodeId, isEmbed, resolvedSource.type, resolvedSource.playbackUrl]);
 
   // Apply playback speed rate
   useEffect(() => {
@@ -495,7 +498,7 @@ function VideoPlayer({
     const time = v.currentTime;
     pendingSeekRef.current = time;
     setCurrentQuality(key);
-    setCurrentSrc(getImageUrl(url));
+    setCurrentSrc(url);
   };
 
   /* derived */
@@ -530,10 +533,21 @@ function VideoPlayer({
       }}
       onTouchStart={revealControls}
     >
-      {/* Real video element / YouTube iframe */}
-      {ytId ? (
+      {/* Real video element / Embed iframe / Unsupported Error */}
+      {resolvedSource.type === 'unsupported' ? (
+        <div className="absolute inset-0 bg-zinc-950 flex flex-col items-center justify-center text-center p-6 z-10">
+          <div className="w-14 h-14 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-500 mb-3">
+            <X className="w-6 h-6" />
+          </div>
+          <h3 className="text-foreground font-bold text-base mb-1">Cannot Play External URL</h3>
+          <p className="text-muted-foreground text-xs max-w-md leading-relaxed">
+            {resolvedSource.errorMessage || "This external webpage link is not a direct playable video stream (.mp4, .m3u8) or supported embed provider."}
+          </p>
+        </div>
+      ) : isEmbed ? (
         <iframe
-          src={`https://www.youtube.com/embed/${ytId}?autoplay=${autoPlay ? 1 : 0}&enablejsapi=1&rel=0`}
+          key={`embed-${resolvedSource.playbackUrl}`}
+          src={resolvedSource.playbackUrl}
           title="Video Player"
           className="absolute inset-0 w-full h-full border-0 z-10"
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
@@ -566,19 +580,19 @@ function VideoPlayer({
       )}
 
       {/* Gradient */}
-      {!ytId && (
+      {!isEmbedOrUnsupported && (
         <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-black/25 pointer-events-none z-10" />
       )}
 
       {/* Buffering spinner */}
-      {loading && !ytId && (
+      {loading && !isEmbedOrUnsupported && (
         <div className="absolute inset-0 flex items-center justify-center z-20 pointer-events-none">
           <Loader2 className="w-10 h-10 text-red-500 animate-spin" />
         </div>
       )}
 
       {/* Skip flash */}
-      {skipAnim && !ytId && (
+      {skipAnim && !isEmbedOrUnsupported && (
         <div
           className={`absolute inset-y-0 flex items-center justify-center pointer-events-none z-20
             ${skipAnim === "right" ? "left-auto right-[15%]" : "left-[15%] right-auto"}`}
@@ -595,7 +609,7 @@ function VideoPlayer({
       )}
 
       {/* Center play/pause controls overlay */}
-      {!ytId && (
+      {!isEmbedOrUnsupported && (
         <div
           className={`absolute inset-0 flex items-center justify-center z-20 transition-opacity duration-300 pointer-events-none ${
             ctrlShow ? "opacity-100" : "opacity-0"
@@ -635,7 +649,7 @@ function VideoPlayer({
       )}
 
       {/* Bottom controls */}
-      {!ytId && (
+      {!isEmbedOrUnsupported && (
         <div
           className={`absolute bottom-0 left-0 right-0 z-20 transition-opacity duration-300 bg-gradient-to-t from-black/90 to-transparent pb-3 pt-6 ${
             ctrlShow ? "opacity-100" : "opacity-0 pointer-events-none"
